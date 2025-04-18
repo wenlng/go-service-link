@@ -44,8 +44,4 @@ logs
 *.log
 
 # resources
-resources/gocaptcha/fonts/*
-resources/gocaptcha/master_images/*
-resources/gocaptcha/shape_images/*
-resources/gocaptcha/thumb_images/*
-resources/gocaptcha/tile_images/*
+dev/store

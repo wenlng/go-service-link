@@ -1,9 +1,15 @@
-package service_discovery
+/**
+ * @Author Awen
+ * @Date 2025/06/18
+ * @Email wengaolng@gmail.com
+ **/
+
+package servicediscovery
 
 import (
 	"context"
 
-	"github.com/wenlng/service-discovery/golang/service_discovery/types"
+	"github.com/wenlng/go-captcha-service-discovery/base"
 )
 
 type NoopDiscovery struct{}
@@ -23,15 +29,15 @@ func (n *NoopDiscovery) Deregister(ctx context.Context, serviceName, instanceID 
 }
 
 // Watch .
-func (n *NoopDiscovery) Watch(ctx context.Context, serviceName string) (chan []types.Instance, error) {
-	ch := make(chan []types.Instance)
+func (n *NoopDiscovery) Watch(ctx context.Context, serviceName string) (chan []base.ServiceInstance, error) {
+	ch := make(chan []base.ServiceInstance)
 	close(ch)
 	return ch, nil
 }
 
 // GetInstances .
-func (n *NoopDiscovery) GetInstances(serviceName string) ([]types.Instance, error) {
-	return []types.Instance{}, nil
+func (n *NoopDiscovery) GetInstances(serviceName string) ([]base.ServiceInstance, error) {
+	return []base.ServiceInstance{}, nil
 }
 
 // Close .

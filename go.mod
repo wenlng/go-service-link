@@ -1,4 +1,4 @@
-module github.com/wenlng/service-discovery
+module github.com/wenlng/go-captcha-service-discovery
 
 go 1.23.0
 
@@ -9,7 +9,6 @@ require (
 	github.com/nacos-group/nacos-sdk-go/v2 v2.2.5
 	github.com/stretchr/testify v1.9.0
 	go.etcd.io/etcd/client/v3 v3.5.21
-	go.uber.org/zap v1.27.0
 )
 
 require (
@@ -58,6 +57,7 @@ require (
 	go.etcd.io/etcd/api/v3 v3.5.21 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.5.21 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
+	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/crypto v0.36.0 // indirect
 	golang.org/x/exp v0.0.0-20230817173708-d852ddb80c63 // indirect
 	golang.org/x/net v0.38.0 // indirect

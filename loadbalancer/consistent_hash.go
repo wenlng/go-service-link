@@ -1,42 +1,48 @@
-package load_balancer
+/**
+ * @Author Awen
+ * @Date 2025/06/18
+ * @Email wengaolng@gmail.com
+ **/
+
+package loadbalancer
 
 import (
 	"fmt"
 	"hash/crc32"
 	"sync"
 
-	"github.com/wenlng/service-discovery/golang/service_discovery/types"
+	"github.com/wenlng/go-captcha-service-discovery/base"
 )
 
 // ConsistentHashBalancer .
 type ConsistentHashBalancer struct {
 	hashRing []uint32
-	nodes    map[uint32]types.Instance
+	nodes    map[uint32]base.ServiceInstance
 	mu       sync.RWMutex
 }
 
 // NewConsistentHashBalancer .
 func NewConsistentHashBalancer() LoadBalancer {
 	return &ConsistentHashBalancer{
-		nodes: make(map[uint32]types.Instance),
+		nodes: make(map[uint32]base.ServiceInstance),
 	}
 }
 
 // Select .
-func (b *ConsistentHashBalancer) Select(instances []types.Instance, key string) (types.Instance, error) {
+func (b *ConsistentHashBalancer) Select(instances []base.ServiceInstance, key string) (base.ServiceInstance, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	if len(instances) == 0 {
-		return types.Instance{}, fmt.Errorf("no instances available")
+		return base.ServiceInstance{}, fmt.Errorf("no instances available")
 	}
 
 	if len(b.hashRing) != len(instances)*10 {
 		b.hashRing = nil
-		b.nodes = make(map[uint32]types.Instance)
+		b.nodes = make(map[uint32]base.ServiceInstance)
 		for _, inst := range instances {
 			for i := 0; i < 10; i++ {
-				hash := crc32.ChecksumIEEE([]byte(fmt.Sprintf("%s:%d", inst.Addr, i)))
+				hash := crc32.ChecksumIEEE([]byte(fmt.Sprintf("%s:%d", inst.Host, i)))
 				b.hashRing = append(b.hashRing, hash)
 				b.nodes[hash] = inst
 			}

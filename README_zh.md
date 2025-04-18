@@ -11,30 +11,26 @@
 
 <br/>
 
-`GoServiceDiscovery` is a convenient library for integrating service discovery, supporting multiple middleware, suitable for microservice architectures, and providing service registration, service discovery, and load balancing functionalities.
+`GoServiceDiscovery` 是便利集成服务发现的功能库，多种中间件可适配支持的合集，适用于微服务架构，支持服务注册、服务发现和负载均衡功能。
 
-> English | [中文](README_zh.md)
+> [English](README.md) | 中文
+<p> ⭐️ 如果能帮助到你，请随手给点一个star</p>
 
-⭐️ If this project helps you, please give it a star!
+## 功能特性
+* 服务注册：服务启动时自动向服务中间件注册服务信息，支持租约机制确保服务状态更新。
+* 服务发现：客户端从服务中间件动态获取服务列表，支持实时监听服务变化。
+* 负载均衡：提供轮询多种负载均衡策略（Random、Round-Robin、Consistent-Hash）。
+* 示例代码：包含服务端/客户端示例，展示服务发现的实际应用。
+* 模块化设计：代码结构清晰，易于扩展和集成。
+* 支持中间件：Etcd、Consul、ZooKeeper、Nacos。
 
-## Features
-
-- **Service Registration**: Automatically registers service information with the service middleware upon startup, supporting lease mechanisms to ensure service status updates.
-- **Service Discovery**: Clients dynamically retrieve service instance lists from the service middleware, supporting real-time monitoring of service changes.
-- **Load Balancing**: Provides multiple load balancing strategies (Random, Round-Robin, Consistent-Hash).
-- **Example Code**: Includes server and client examples demonstrating practical applications of service discovery.
-- **Modular Design**: Clear code structure, easy to extend and integrate.
-- **Supported Middleware**: Etcd, Consul, ZooKeeper, Nacos.
-
-## Server Side
-
-Below is an example of server-side service registration code:
-
+## Service 端
+下面是一个服务器端服务注册代码的例子：
 ```go
 var discovery servicediscovery.ServiceDiscovery
 
-// setupDiscovery configures service discovery
-func setupDiscovery(serviceName, httpPort, grpcPort string) error {
+// setupDiscovery .
+func setupDiscovery(serviceName, httPort, grpcPort string) error {
     var err error
     discovery, err = servicediscovery.NewServiceDiscovery(servicediscovery.Config{
         Type:        servicediscovery.ServiceDiscoveryTypeEtcd,
@@ -45,13 +41,13 @@ func setupDiscovery(serviceName, httpPort, grpcPort string) error {
         
         //Type:        servicediscovery.ServiceDiscoveryTypeNacos,
         //Addrs:       "localhost:8848",
-        //Username:    "nacos",
-        //Password:    "nacos",
+        //Username: "nocos",
+        //Password: "nocos",
         
         //Type:        servicediscovery.ServiceDiscoveryTypeConsul,
         //Addrs:       "localhost:8500",
         
-		TTL:         10 * time.Second,
+        TTL:         10 * time.Second,
         KeepAlive:   3 * time.Second,
         ServiceName: serviceName,
     })
@@ -104,7 +100,8 @@ func main() {
     }()
 }
 
-// watchInstances periodically monitors and updates service instances
+
+// watchInstances 定期监听更新服务实例
 func watchInstances(ctx context.Context, discovery servicediscovery.ServiceDiscovery, serviceName, instanceID string) {
     if discovery == nil {
         return
@@ -132,16 +129,15 @@ func watchInstances(ctx context.Context, discovery servicediscovery.ServiceDisco
         }
     }
 }
+
 ```
 
-## Client Side
-
-Below is an example of client-side service discovery and load balancing code:
-
+## Client 端
+下面是客户端服务发现和负载平衡代码的示例：
 ```go
 var discovery *servicediscovery.DiscoveryWithLB
 
-// setupDiscovery configures service discovery
+// setupDiscovery .
 func setupDiscovery(serviceName string) error {
     var err error
     discovery, err = servicediscovery.NewDiscoveryWithLB(servicediscovery.Config{
@@ -153,13 +149,13 @@ func setupDiscovery(serviceName string) error {
         
         //Type:        servicediscovery.ServiceDiscoveryTypeNacos,
         //Addrs:       "localhost:8848",
-        //Username:    "nacos",
-        //Password:    "nacos",
+        //Username: "nocos",
+        //Password: "nocos",
         
-        // Type:        servicediscovery.ServiceDiscoveryTypeConsul,
-        // Addrs:       "localhost:8500",
+        //Type:        servicediscovery.ServiceDiscoveryTypeConsul,
+        //Addrs:       "localhost:8500",
         
-		TTL:         10 * time.Second,
+        TTL:         10 * time.Second,
         KeepAlive:   3 * time.Second,
         ServiceName: serviceName,
     }, loadbalancer.LoadBalancerTypeConsistentHash)
@@ -190,7 +186,7 @@ func main() {
     // LB select
     inst, err := discovery.Select(serviceName, helper.GetHostname())
     if err != nil {
-        fmt.Fprintf(os.Stderr, "Failed to select instance: %v\n", err)
+        fmt.Fprintf(os.Stderr, "failed to select instance: %v\n", err)
         return
     }
 	
@@ -205,14 +201,17 @@ func main() {
     // Close
     defer func() {
         if err = discovery.Close(); err != nil {
-            fmt.Fprintf(os.Stderr, "Service discovery close error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Service discovery close error: %v\n", err)
         } else {
             fmt.Fprintf(os.Stdout, "Service discovery closed successfully\n")
         }
     }()
 }
+
 ```
 
-## LICENSE
 
+## LICENSE
 MIT
+
+<br/>

@@ -1,10 +1,16 @@
-package load_balancer
+package loadbalancer
+
+/**
+ * @Author Awen
+ * @Date 2025/06/18
+ * @Email wengaolng@gmail.com
+ **/
 
 import (
 	"fmt"
 	"sync/atomic"
 
-	"github.com/wenlng/service-discovery/golang/service_discovery/types"
+	"github.com/wenlng/go-captcha-service-discovery/base"
 )
 
 // RoundRobinBalancer implements round-robin load balancing
@@ -18,9 +24,9 @@ func NewRoundRobinBalancer() LoadBalancer {
 }
 
 // Select .
-func (b *RoundRobinBalancer) Select(instances []types.Instance, key string) (types.Instance, error) {
+func (b *RoundRobinBalancer) Select(instances []base.ServiceInstance, key string) (base.ServiceInstance, error) {
 	if len(instances) == 0 {
-		return types.Instance{}, fmt.Errorf("no instances available")
+		return base.ServiceInstance{}, fmt.Errorf("no instances available")
 	}
 	index := atomic.AddUint64(&b.counter, 1) % uint64(len(instances))
 	return instances[index], nil

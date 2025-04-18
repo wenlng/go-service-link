@@ -1,8 +1,12 @@
-package load_balancer
+/**
+ * @Author Awen
+ * @Date 2025/06/18
+ * @Email wengaolng@gmail.com
+ **/
 
-import (
-	"github.com/wenlng/service-discovery/golang/service_discovery/types"
-)
+package loadbalancer
+
+import "github.com/wenlng/go-captcha-service-discovery/base"
 
 type LoadBalancerType string
 
@@ -15,5 +19,5 @@ const (
 
 // LoadBalancer load balance strategy
 type LoadBalancer interface {
-	Select(instances []types.Instance, key string) (types.Instance, error)
+	Select(instances []base.ServiceInstance, key string) (base.ServiceInstance, error)
 }

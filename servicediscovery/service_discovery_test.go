@@ -1,4 +1,4 @@
-package service_discovery
+package servicediscovery
 
 import (
 	"context"
@@ -34,7 +34,7 @@ func TestEtcdDiscovery(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, instances, 1)
 		assert.Equal(t, instanceID, instances[0].InstanceID)
-		assert.Equal(t, addr, instances[0].Addr)
+		assert.Equal(t, addr, instances[0].Host)
 		assert.Equal(t, httpPort, instances[0].Metadata["http_port"])
 		assert.Equal(t, grpcPort, instances[0].Metadata["grpc_port"])
 	})
@@ -96,7 +96,7 @@ func TestDiscoveryWithLB(t *testing.T) {
 		for i := 0; i < 4; i++ {
 			inst, err := dlb.Select(serviceName, fmt.Sprintf("key%d", i))
 			assert.NoError(t, err)
-			assert.Contains(t, []string{addr1, addr2}, inst.Addr)
+			assert.Contains(t, []string{addr1, addr2}, inst.Host)
 			assert.Equal(t, httpPort, inst.Metadata["http_port"])
 			assert.Equal(t, grpcPort, inst.Metadata["grpc_port"])
 		}
@@ -109,7 +109,7 @@ func TestDiscoveryWithLB(t *testing.T) {
 		select {
 		case instances := <-ch:
 			assert.Len(t, instances, 2)
-			addrs := []string{instances[0].Addr, instances[1].Addr}
+			addrs := []string{instances[0].Host, instances[1].Host}
 			assert.Contains(t, addrs, addr1)
 			assert.Contains(t, addrs, addr2)
 		case <-time.After(time.Second * 5):
