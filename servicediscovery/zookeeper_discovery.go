@@ -18,8 +18,8 @@ import (
 
 	"github.com/go-zookeeper/zk"
 	"github.com/google/uuid"
-	"github.com/wenlng/go-captcha-service-discovery/base"
-	"github.com/wenlng/go-captcha-service-discovery/helper"
+	"github.com/wenlng/go-captcha-discovery/base"
+	"github.com/wenlng/go-captcha-discovery/helper"
 )
 
 // ZooKeeperDiscovery .

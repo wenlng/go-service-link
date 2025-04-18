@@ -11,7 +11,7 @@ import (
 	"hash/crc32"
 	"sync"
 
-	"github.com/wenlng/go-captcha-service-discovery/base"
+	"github.com/wenlng/go-captcha-discovery/base"
 )
 
 // ConsistentHashBalancer .

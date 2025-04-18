@@ -16,8 +16,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hashicorp/consul/api"
-	"github.com/wenlng/go-captcha-service-discovery/base"
-	"github.com/wenlng/go-captcha-service-discovery/helper"
+	"github.com/wenlng/go-captcha-discovery/base"
+	"github.com/wenlng/go-captcha-discovery/helper"
 )
 
 // ConsulDiscovery .

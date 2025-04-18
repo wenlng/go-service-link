@@ -20,8 +20,8 @@ import (
 	"github.com/nacos-group/nacos-sdk-go/v2/common/constant"
 	"github.com/nacos-group/nacos-sdk-go/v2/model"
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
-	"github.com/wenlng/go-captcha-service-discovery/base"
-	"github.com/wenlng/go-captcha-service-discovery/helper"
+	"github.com/wenlng/go-captcha-discovery/base"
+	"github.com/wenlng/go-captcha-discovery/helper"
 )
 
 // NacosDiscovery .

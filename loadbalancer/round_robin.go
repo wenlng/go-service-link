@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"github.com/wenlng/go-captcha-service-discovery/base"
+	"github.com/wenlng/go-captcha-discovery/base"
 )
 
 // RoundRobinBalancer implements round-robin load balancing
