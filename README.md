@@ -1,5 +1,6 @@
 <div align="center">
 <h1 style="margin: 0; padding: 0">GoServiceDiscovery</h1>
+<p style="margin: 0; padding: 0">The Service Discovery for the Golang</p>
 <br/>
 <a href="https://goreportcard.com/report/github.com/wenlng/go-service-discovery"><img src="https://goreportcard.com/badge/github.com/wenlng/go-service-discovery"/></a>
 <a href="https://godoc.org/github.com/wenlng/go-service-discovery"><img src="https://godoc.org/github.com/wenlng/go-service-discovery?status.svg"/></a>
@@ -104,7 +105,7 @@ func main() {
     }()
 }
 
-// watchInstances periodically monitors and updates service instances
+// watchInstances monitors service instances
 func watchInstances(ctx context.Context, discovery servicediscovery.ServiceDiscovery, serviceName, instanceID string) {
     if discovery == nil {
         return

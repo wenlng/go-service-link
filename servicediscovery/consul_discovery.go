@@ -199,7 +199,7 @@ func (d *ConsulDiscovery) Register(ctx context.Context, serviceName, instanceID,
 		ID:      instanceID,
 		Name:    serviceName,
 		Address: host,
-		Port:    int(port),
+		Port:    port,
 		Meta: map[string]string{
 			"hostname":  helper.GetHostname(),
 			"host":      host,
@@ -316,7 +316,7 @@ func (d *ConsulDiscovery) servicesToInstances(services []*api.ServiceEntry) []ba
 	for _, svc := range services {
 		instances = append(instances, base.ServiceInstance{
 			InstanceID: svc.Service.ID,
-			Host:       fmt.Sprintf("%s:%d", svc.Service.Address, svc.Service.Port),
+			Host:       svc.Service.Address,
 			Metadata:   svc.Service.Meta,
 		})
 	}
