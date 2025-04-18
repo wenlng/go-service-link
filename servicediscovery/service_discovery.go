@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wenlng/go-captcha-discovery/base"
-	"github.com/wenlng/go-captcha-discovery/loadbalancer"
+	"github.com/wenlng/go-service-discovery/base"
+	"github.com/wenlng/go-service-discovery/loadbalancer"
 )
 
 type ServiceDiscoveryType string

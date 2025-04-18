@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/wenlng/go-captcha-discovery/servicediscovery"
+	"github.com/wenlng/go-service-discovery/servicediscovery"
 )
 
 var discovery servicediscovery.ServiceDiscovery

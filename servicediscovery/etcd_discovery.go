@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/wenlng/go-captcha-discovery/base"
-	"github.com/wenlng/go-captcha-discovery/helper"
+	"github.com/wenlng/go-service-discovery/base"
+	"github.com/wenlng/go-service-discovery/helper"
 	"go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"

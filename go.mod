@@ -1,4 +1,4 @@
-module github.com/wenlng/go-captcha-discovery
+module github.com/wenlng/go-service-discovery
 
 go 1.23.0
 

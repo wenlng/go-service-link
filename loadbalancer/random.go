@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/wenlng/go-captcha-discovery/base"
+	"github.com/wenlng/go-service-discovery/base"
 )
 
 // RandomBalancer implements random load balancing

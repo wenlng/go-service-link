@@ -9,7 +9,7 @@ package servicediscovery
 import (
 	"context"
 
-	"github.com/wenlng/go-captcha-discovery/base"
+	"github.com/wenlng/go-service-discovery/base"
 )
 
 type NoopDiscovery struct{}

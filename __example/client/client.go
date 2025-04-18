@@ -5,9 +5,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/wenlng/go-captcha-discovery/helper"
-	"github.com/wenlng/go-captcha-discovery/loadbalancer"
-	"github.com/wenlng/go-captcha-discovery/servicediscovery"
+	"github.com/wenlng/go-service-discovery/helper"
+	"github.com/wenlng/go-service-discovery/loadbalancer"
+	"github.com/wenlng/go-service-discovery/servicediscovery"
 )
 
 var discovery *servicediscovery.DiscoveryWithLB

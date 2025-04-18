@@ -6,7 +6,7 @@
 
 package loadbalancer
 
-import "github.com/wenlng/go-captcha-discovery/base"
+import "github.com/wenlng/go-service-discovery/base"
 
 type LoadBalancerType string
 
