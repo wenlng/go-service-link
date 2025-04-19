@@ -17,9 +17,18 @@ import (
 	"github.com/wenlng/go-service-discovery/loadbalancer"
 )
 
-type ServiceDiscoveryType string
+// registeredServiceInfo Save the information of the registered services
+type registeredServiceInfo struct {
+	ServiceName string
+	InstanceID  string
+	Host        string
+	HTTPPort    string
+	GRPCPort    string
+}
 
 // ServiceDiscoveryType .
+type ServiceDiscoveryType string
+
 const (
 	ServiceDiscoveryTypeEtcd      ServiceDiscoveryType = "etcd"
 	ServiceDiscoveryTypeZookeeper                      = "zookeeper"
@@ -36,7 +45,7 @@ const (
 	ServiceDiscoveryLogTypeError                         = "error"
 )
 
-type LogOutputHookFunc = func(logType ServiceDiscoveryLogType, message string)
+type OutputLogCallback = func(logType ServiceDiscoveryLogType, message string)
 
 // ServiceDiscovery defines the interface for service discovery
 type ServiceDiscovery interface {
@@ -44,7 +53,7 @@ type ServiceDiscovery interface {
 	Deregister(ctx context.Context, serviceName, instanceID string) error
 	Watch(ctx context.Context, serviceName string) (chan []base.ServiceInstance, error)
 	GetInstances(serviceName string) ([]base.ServiceInstance, error)
-	SetLogOutputHookFunc(logOutputHookFunc LogOutputHookFunc)
+	SetOutputLogCallback(outputLogCallback OutputLogCallback)
 	Close() error
 }
 
@@ -57,7 +66,8 @@ type Config struct {
 	ServiceName string
 
 	// CommonBase
-	Addrs          string        // 127.0.0.1:8080,192.168.0.1:8080
+	Addrs          string // 127.0.0.1:8080,192.168.0.1:8080
+	PoolSize       int
 	TTL            time.Duration // TTL
 	KeepAlive      time.Duration // Heartbeat interval
 	MaxRetries     int
@@ -90,6 +100,7 @@ func NewServiceDiscovery(config Config) (ServiceDiscovery, error) {
 		cnf := config.EtcdDiscoveryConfig
 
 		cnf.tlsConfig = config.TlsConfig
+		cnf.poolSize = config.PoolSize
 		cnf.address = strings.Split(config.Addrs, ",")
 		cnf.ttl = config.TTL
 		cnf.keepAlive = config.KeepAlive
@@ -104,6 +115,7 @@ func NewServiceDiscovery(config Config) (ServiceDiscovery, error) {
 		cnf := config.ZooKeeperDiscoveryConfig
 
 		cnf.tlsConfig = config.TlsConfig
+		cnf.poolSize = config.PoolSize
 		cnf.address = strings.Split(config.Addrs, ",")
 		cnf.ttl = config.TTL
 		cnf.keepAlive = config.KeepAlive
@@ -118,6 +130,7 @@ func NewServiceDiscovery(config Config) (ServiceDiscovery, error) {
 		cnf := config.ConsulDiscoveryConfig
 
 		cnf.tlsConfig = config.TlsConfig
+		cnf.poolSize = config.PoolSize
 		cnf.address = strings.Split(config.Addrs, ",")
 		cnf.ttl = config.TTL
 		cnf.keepAlive = config.KeepAlive
@@ -132,6 +145,7 @@ func NewServiceDiscovery(config Config) (ServiceDiscovery, error) {
 		cnf := config.NacosDiscoveryConfig
 
 		cnf.tlsConfig = config.TlsConfig
+		cnf.poolSize = config.PoolSize
 		cnf.address = strings.Split(config.Addrs, ",")
 		cnf.ttl = config.TTL
 		cnf.keepAlive = config.KeepAlive
@@ -179,9 +193,9 @@ func NewDiscoveryWithLB(config Config, lbType loadbalancer.LoadBalancerType) (*D
 	return dlb, nil
 }
 
-// SetLogOutputHookFunc .
-func (d *DiscoveryWithLB) SetLogOutputHookFunc(logOutputHookFunc LogOutputHookFunc) {
-	d.discovery.SetLogOutputHookFunc(logOutputHookFunc)
+// SetOutputLogCallback .
+func (d *DiscoveryWithLB) SetOutputLogCallback(outputLogCallback OutputLogCallback) {
+	d.discovery.SetOutputLogCallback(outputLogCallback)
 }
 
 // Register .
@@ -210,6 +224,7 @@ func (d *DiscoveryWithLB) Watch(ctx context.Context, serviceName string) (chan [
 		}
 		close(outCh)
 	}()
+
 	return outCh, nil
 }
 

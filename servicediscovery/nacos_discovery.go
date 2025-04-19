@@ -9,55 +9,36 @@ package servicediscovery
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"strconv"
-	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/nacos-group/nacos-sdk-go/v2/clients"
-	"github.com/nacos-group/nacos-sdk-go/v2/clients/naming_client"
-	"github.com/nacos-group/nacos-sdk-go/v2/common/constant"
 	"github.com/nacos-group/nacos-sdk-go/v2/model"
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
 	"github.com/wenlng/go-service-discovery/base"
+	"github.com/wenlng/go-service-discovery/clientpool"
+	"github.com/wenlng/go-service-discovery/extraconfig"
 	"github.com/wenlng/go-service-discovery/helper"
 )
 
 // NacosDiscovery .
 type NacosDiscovery struct {
-	client            naming_client.INamingClient
-	logOutputHookFunc LogOutputHookFunc
+	//client            naming_client.INamingClient
+	outputLogCallback OutputLogCallback
+	pool              *clientpool.NacosNamingPool
 	clientConfig      NacosDiscoveryConfig
+
+	registeredServices map[string]registeredServiceInfo
+	mutex              sync.RWMutex
 }
 
 // NacosDiscoveryConfig .
 type NacosDiscoveryConfig struct {
-	TimeoutMs            uint64
-	BeatInterval         int64
-	NamespaceId          string
-	AppName              string
-	AppKey               string
-	Endpoint             string
-	RegionId             string
-	AccessKey            string
-	SecretKey            string
-	OpenKMS              bool
-	CacheDir             string
-	DisableUseSnapShot   bool
-	UpdateThreadNum      int
-	NotLoadCacheAtStart  bool
-	UpdateCacheWhenEmpty bool
-	LogDir               string
-	LogLevel             string
-	ContextPath          string
-	AppendToStdout       bool
-	AsyncUpdateService   bool
-	EndpointContextPath  string
-	EndpointQueryParams  string
-	ClusterName          string
+	extraconfig.NacosExtraConfig
 
 	address        []string
+	poolSize       int
 	ttl            time.Duration
 	keepAlive      time.Duration
 	maxRetries     int
@@ -69,6 +50,10 @@ type NacosDiscoveryConfig struct {
 
 // NewNacosDiscovery .
 func NewNacosDiscovery(clientConfig NacosDiscoveryConfig) (*NacosDiscovery, error) {
+	if clientConfig.poolSize <= 0 {
+		clientConfig.poolSize = 5
+	}
+
 	if clientConfig.maxRetries <= 0 {
 		clientConfig.maxRetries = 3
 	}
@@ -77,200 +62,89 @@ func NewNacosDiscovery(clientConfig NacosDiscoveryConfig) (*NacosDiscovery, erro
 		clientConfig.baseRetryDelay = 500 * time.Millisecond
 	}
 
-	namingClient, err := createNacosClient(clientConfig)
+	pool, err := clientpool.NewNacosNamingPool(clientConfig.poolSize, clientConfig.address, &clientConfig.NacosExtraConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Nacos: %v", err)
+		return nil, err
 	}
 
 	return &NacosDiscovery{
-		client:       namingClient,
-		clientConfig: clientConfig,
+		clientConfig:       clientConfig,
+		pool:               pool,
+		registeredServices: make(map[string]registeredServiceInfo),
 	}, nil
 }
 
-// createNacosClient try to create a Nacos client that includes a retry mechanism
-func createNacosClient(clientConfig NacosDiscoveryConfig) (naming_client.INamingClient, error) {
-	var client naming_client.INamingClient
-	var err error
-
-	clientCfg := *constant.NewClientConfig(
-		constant.WithNamespaceId(""),
-		constant.WithTimeoutMs(5000),
-		constant.WithNotLoadCacheAtStart(true),
-	)
-
-	if clientConfig.username != "" {
-		clientCfg.Username = clientConfig.username
-	}
-
-	if clientConfig.password != "" {
-		clientCfg.Password = clientConfig.password
-	}
-
-	if clientConfig.TimeoutMs > 0 {
-		clientCfg.TimeoutMs = clientConfig.TimeoutMs
-	}
-	if clientConfig.BeatInterval > 0 {
-		clientCfg.BeatInterval = clientConfig.BeatInterval
-	}
-	if clientConfig.NamespaceId != "" {
-		clientCfg.NamespaceId = clientConfig.NamespaceId
-	}
-	if clientConfig.AppName != "" {
-		clientCfg.AppName = clientConfig.AppName
-	}
-	if clientConfig.AppKey != "" {
-		clientCfg.AppKey = clientConfig.AppKey
-	}
-	if clientConfig.AppKey != "" {
-		clientCfg.AppKey = clientConfig.AppKey
-	}
-	if clientConfig.Endpoint != "" {
-		clientCfg.Endpoint = clientConfig.Endpoint
-	}
-	if clientConfig.RegionId != "" {
-		clientCfg.RegionId = clientConfig.RegionId
-	}
-	if clientConfig.AccessKey != "" {
-		clientCfg.AccessKey = clientConfig.AccessKey
-	}
-	if clientConfig.SecretKey != "" {
-		clientCfg.SecretKey = clientConfig.SecretKey
-	}
-	if clientConfig.OpenKMS {
-		clientCfg.OpenKMS = clientConfig.OpenKMS
-	}
-	if clientConfig.CacheDir != "" {
-		clientCfg.CacheDir = clientConfig.CacheDir
-	}
-	if clientConfig.DisableUseSnapShot {
-		clientCfg.DisableUseSnapShot = clientConfig.DisableUseSnapShot
-	}
-	if clientConfig.UpdateThreadNum > 0 {
-		clientCfg.UpdateThreadNum = clientConfig.UpdateThreadNum
-	}
-	if clientConfig.NotLoadCacheAtStart {
-		clientCfg.NotLoadCacheAtStart = clientConfig.NotLoadCacheAtStart
-	}
-	if clientConfig.UpdateCacheWhenEmpty {
-		clientCfg.UpdateCacheWhenEmpty = clientConfig.UpdateCacheWhenEmpty
-	}
-	if clientConfig.LogDir != "" {
-		clientCfg.LogDir = clientConfig.LogDir
-	}
-	if clientConfig.LogLevel != "" {
-		clientCfg.LogLevel = clientConfig.LogLevel
-	}
-	if clientConfig.ContextPath != "" {
-		clientCfg.ContextPath = clientConfig.ContextPath
-	}
-	if clientConfig.AppendToStdout {
-		clientCfg.AppendToStdout = clientConfig.AppendToStdout
-	}
-	if clientConfig.AsyncUpdateService {
-		clientCfg.AsyncUpdateService = clientConfig.AsyncUpdateService
-	}
-	if clientConfig.EndpointContextPath != "" {
-		clientCfg.EndpointContextPath = clientConfig.EndpointContextPath
-	}
-	if clientConfig.EndpointQueryParams != "" {
-		clientCfg.EndpointQueryParams = clientConfig.EndpointQueryParams
-	}
-	if clientConfig.ClusterName != "" {
-		clientCfg.ClusterName = clientConfig.ClusterName
-	}
-
-	if clientConfig.tlsConfig != nil {
-		clientCfg.TLSCfg = constant.TLSConfig{
-			Enable:             true,
-			CaFile:             clientConfig.tlsConfig.CAFile,
-			CertFile:           clientConfig.tlsConfig.CertFile,
-			KeyFile:            clientConfig.tlsConfig.KeyFile,
-			ServerNameOverride: clientConfig.tlsConfig.ServerName,
-		}
-	}
-
-	var serverCfgs []constant.ServerConfig
-	for _, addr := range clientConfig.address {
-		hostPort := strings.Split(addr, ":")
-		host := hostPort[0]
-		port, _ := strconv.Atoi(hostPort[1])
-		serverCfgs = append(serverCfgs, *constant.NewServerConfig(host, uint64(port)))
-	}
-
-	for attempt := 1; attempt <= clientConfig.maxRetries; attempt++ {
-		client, err = clients.NewNamingClient(
-			vo.NacosClientParam{
-				ClientConfig:  &clientCfg,
-				ServerConfigs: serverCfgs,
-			},
-		)
-		if err == nil {
-			return client, nil
-		}
-
-		d := 1 << uint(attempt-1)
-		delay := time.Duration(float64(clientConfig.baseRetryDelay) * float64(d))
-		jitter := time.Duration(rand.Intn(100)) * time.Millisecond
-		time.Sleep(delay + jitter)
-	}
-
-	return nil, fmt.Errorf("after %d attempts, it still couldn't connect to Nacos: %v", clientConfig.maxRetries, err)
-}
-
-// SetLogOutputHookFunc .
-func (d *NacosDiscovery) SetLogOutputHookFunc(logOutputHookFunc LogOutputHookFunc) {
-	d.logOutputHookFunc = logOutputHookFunc
+// SetOutputLogCallback .
+func (d *NacosDiscovery) SetOutputLogCallback(outputLogCallback OutputLogCallback) {
+	d.outputLogCallback = outputLogCallback
 }
 
 // outLog
 func (d *NacosDiscovery) outLog(logType ServiceDiscoveryLogType, message string) {
-	if d.logOutputHookFunc != nil {
-		d.logOutputHookFunc(logType, message)
+	if d.outputLogCallback != nil {
+		d.outputLogCallback(logType, message)
 	}
 }
 
-// withRetry perform the operation using the retry logic
-func (d *NacosDiscovery) withRetry(ctx context.Context, operation func() (bool, error)) (bool, error) {
-	var success bool
-	var err error
-	for attempt := 1; attempt <= d.clientConfig.maxRetries; attempt++ {
-		success, err = operation()
-		if success && err == nil {
-			return true, nil
-		}
+// checkAndReRegisterServices check and re-register the service
+func (d *NacosDiscovery) checkAndReRegisterServices(ctx context.Context) error {
+	cli := d.pool.Get()
+	defer d.pool.Put(cli)
 
-		d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("Operation failed. the %d/%d attempt: %v", attempt, d.clientConfig.maxRetries, err))
+	d.mutex.RLock()
+	services := make(map[string]registeredServiceInfo)
+	for k, v := range d.registeredServices {
+		services[k] = v
+	}
+	d.mutex.RUnlock()
 
-		dd := 1 << uint(attempt-1)
-		delay := time.Duration(float64(d.clientConfig.baseRetryDelay) * float64(dd))
-		jitter := time.Duration(rand.Intn(100)) * time.Millisecond
-		select {
-		case <-time.After(delay + jitter):
-		case <-ctx.Done():
-			return false, ctx.Err()
-		}
-
-		if attempt < d.clientConfig.maxRetries {
-			newClient, clientErr := createNacosClient(d.clientConfig)
-			if clientErr == nil {
-				d.client = newClient
-				d.outLog(ServiceDiscoveryLogTypeInfo, "Successfully reconnected to Nacos")
+	for instanceID, svcInfo := range services {
+		operation := func() error {
+			service, err := cli.GetService(vo.GetServiceParam{
+				ServiceName: svcInfo.ServiceName,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to check the service registration status: %v", err)
 			}
+
+			registered := false
+			for _, inst := range service.Hosts {
+				if inst.InstanceId == instanceID {
+					registered = true
+					break
+				}
+			}
+
+			if !registered {
+				d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The service has not been registered. Re-register: %s, instanceID: %s", svcInfo.ServiceName, instanceID))
+				return d.Register(ctx, svcInfo.ServiceName, instanceID, svcInfo.Host, svcInfo.HTTPPort, svcInfo.GRPCPort)
+			}
+			return nil
+		}
+
+		if err := helper.WithRetry(ctx, operation); err != nil {
+			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+			return err
 		}
 	}
-	return success, fmt.Errorf("the operation failed after %d attempts: %v", d.clientConfig.maxRetries, err)
+	return nil
 }
 
 // Register .
 func (d *NacosDiscovery) Register(ctx context.Context, serviceName, instanceID, host, httpPort, grpcPort string) error {
+	cli := d.pool.Get()
+	defer d.pool.Put(cli)
+
 	if instanceID == "" {
+
 		instanceID = uuid.New().String()
 	}
 
 	port, _ := strconv.Atoi(httpPort)
-	success, err := d.withRetry(ctx, func() (bool, error) {
-		return d.client.RegisterInstance(vo.RegisterInstanceParam{
+	var success bool
+	operation := func() error {
+		var err error
+		success, err = cli.RegisterInstance(vo.RegisterInstanceParam{
 			Ip:          host,
 			Port:        uint64(port),
 			ServiceName: serviceName,
@@ -286,21 +160,34 @@ func (d *NacosDiscovery) Register(ctx context.Context, serviceName, instanceID, 
 				"instance_id": instanceID,
 			},
 		})
-	})
-
-	if !success || err != nil {
+		return err
+	}
+	if err := helper.WithRetry(context.Background(), operation); !success || err != nil {
 		return fmt.Errorf("failed to register instance: %v", err)
 	}
 
+	d.mutex.Lock()
+	d.registeredServices[instanceID] = registeredServiceInfo{
+		ServiceName: serviceName,
+		InstanceID:  instanceID,
+		Host:        host,
+		HTTPPort:    httpPort,
+		GRPCPort:    grpcPort,
+	}
+	d.mutex.Unlock()
+
 	d.outLog(
 		ServiceDiscoveryLogTypeInfo,
-		fmt.Sprintf("Registered instance, service: %s, instanceId: %s, host: %s, http_port: %s, grpc_port: %s",
+		fmt.Sprintf("[NacosDiscovery] Registered instance, service: %s, instanceId: %s, host: %s, http_port: %s, grpc_port: %s",
 			serviceName, instanceID, host, httpPort, grpcPort))
 	return nil
 }
 
 // Deregister .
 func (d *NacosDiscovery) Deregister(ctx context.Context, serviceName, instanceID string) error {
+	cli := d.pool.Get()
+	defer d.pool.Put(cli)
+
 	instances, err := d.GetInstances(serviceName)
 	if err != nil {
 		return fmt.Errorf("failed to get instances for deregister: %v", err)
@@ -319,21 +206,27 @@ func (d *NacosDiscovery) Deregister(ctx context.Context, serviceName, instanceID
 		}
 	}
 
-	success, err := d.withRetry(ctx, func() (bool, error) {
-		return d.client.DeregisterInstance(vo.DeregisterInstanceParam{
+	var success bool
+	operation := func() error {
+		success, err = cli.DeregisterInstance(vo.DeregisterInstanceParam{
 			Ip:          instance.Ip,
 			Port:        instance.Port,
 			ServiceName: serviceName,
 			Ephemeral:   true,
 		})
-	})
-	if !success || err != nil {
+		return err
+	}
+	if err = helper.WithRetry(context.Background(), operation); !success || err != nil {
 		return fmt.Errorf("failed to deregister instance: %v", err)
 	}
 
+	d.mutex.Lock()
+	delete(d.registeredServices, instanceID)
+	d.mutex.Unlock()
+
 	d.outLog(
 		ServiceDiscoveryLogTypeInfo,
-		fmt.Sprintf("Deregistered instance, service: %s, instanceId: %s", serviceName, instanceID))
+		fmt.Sprintf("[NacosDiscovery] Deregistered instance, service: %s, instanceId: %s", serviceName, instanceID))
 
 	return nil
 }
@@ -343,11 +236,12 @@ func (d *NacosDiscovery) Watch(ctx context.Context, serviceName string) (chan []
 	ch := make(chan []base.ServiceInstance, 1)
 	go func() {
 		defer close(ch)
+
 		subscribeParam := &vo.SubscribeParam{
 			ServiceName: serviceName,
 			SubscribeCallback: func(services []model.Instance, err error) {
 				if err != nil {
-					d.outLog(ServiceDiscoveryLogTypeError, fmt.Sprintf("Subscribe callback error: %v", err))
+					d.outLog(ServiceDiscoveryLogTypeError, fmt.Sprintf("[NacosDiscovery] Subscribe callback error: %v", err))
 					go d.recoverSubscribe(ctx, serviceName, ch)
 					return
 				}
@@ -368,27 +262,34 @@ func (d *NacosDiscovery) Watch(ctx context.Context, serviceName string) (chan []
 			},
 		}
 
-		_, err := d.withRetry(ctx, func() (bool, error) {
-			subscribeErr := d.client.Subscribe(subscribeParam)
-			return subscribeErr == nil, subscribeErr
-		})
-		if err != nil {
-			d.outLog(ServiceDiscoveryLogTypeError, fmt.Sprintf("Failed to subscribe: %v", err))
+		cli := d.pool.Get()
+		operation := func() error {
+			subscribeErr := cli.Subscribe(subscribeParam)
+			return subscribeErr
+		}
+		if err := helper.WithRetry(context.Background(), operation); err != nil {
+			d.outLog(ServiceDiscoveryLogTypeError, fmt.Sprintf("[NacosDiscovery] Failed to subscribe: %v", err))
+			d.pool.Put(cli)
 			return
 		}
+		d.pool.Put(cli)
+
 		<-ctx.Done()
-		_ = d.client.Unsubscribe(subscribeParam)
+		_ = cli.Unsubscribe(subscribeParam)
 	}()
 	return ch, nil
 }
 
 // recoverSubscribe try to restore the subscription
 func (d *NacosDiscovery) recoverSubscribe(ctx context.Context, serviceName string, ch chan []base.ServiceInstance) {
+	cli := d.pool.Get()
+	defer d.pool.Put(cli)
+
 	subscribeParam := &vo.SubscribeParam{
 		ServiceName: serviceName,
 		SubscribeCallback: func(services []model.Instance, err error) {
 			if err != nil {
-				d.outLog(ServiceDiscoveryLogTypeError, fmt.Sprintf("Subscribe to NACOS callback error: %v", err))
+				d.outLog(ServiceDiscoveryLogTypeError, fmt.Sprintf("[NacosDiscovery] Subscribe to NACOS callback error: %v", err))
 				return
 			}
 			instances := make([]base.ServiceInstance, len(services))
@@ -408,31 +309,43 @@ func (d *NacosDiscovery) recoverSubscribe(ctx context.Context, serviceName strin
 		},
 	}
 
-	_, err := d.withRetry(ctx, func() (bool, error) {
-		subscribeErr := d.client.Subscribe(subscribeParam)
-		return subscribeErr == nil, subscribeErr
-	})
-	if err != nil {
-		d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The NACOS subscription cannot be restored: %v", err))
+	operation := func() error {
+		subscribeErr := cli.Subscribe(subscribeParam)
+		return subscribeErr
+	}
+	if err := helper.WithRetry(context.Background(), operation); err != nil {
+		d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[NacosDiscovery] The NACOS subscription cannot be restored: %v", err))
 		return
 	}
-	d.outLog(ServiceDiscoveryLogTypeInfo, "Successfully restored the NACOS subscription")
+
+	d.outLog(ServiceDiscoveryLogTypeInfo, "[NacosDiscovery] Successfully restored the NACOS subscription")
+
+	if err := d.checkAndReRegisterServices(ctx); err != nil {
+		d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+	}
 }
 
 // GetInstances .
 func (d *NacosDiscovery) GetInstances(serviceName string) ([]base.ServiceInstance, error) {
+	cli := d.pool.Get()
+	defer d.pool.Put(cli)
+
 	var service model.Service
-	_, err := d.withRetry(context.Background(), func() (bool, error) {
+
+	operation := func() error {
 		var getErr error
-		service, getErr = d.client.GetService(vo.GetServiceParam{
+		service, getErr = cli.GetService(vo.GetServiceParam{
 			ServiceName: serviceName,
 		})
-		return getErr == nil, getErr
-	})
-
-	if err != nil {
+		return getErr
+	}
+	if err := helper.WithRetry(context.Background(), operation); err != nil {
+		if err := d.checkAndReRegisterServices(context.Background()); err != nil {
+			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+		}
 		return nil, fmt.Errorf("failed to get instances: %v", err)
 	}
+
 	result := make([]base.ServiceInstance, len(service.Hosts))
 	for i, inst := range service.Hosts {
 		result[i] = base.ServiceInstance{
@@ -446,5 +359,6 @@ func (d *NacosDiscovery) GetInstances(serviceName string) ([]base.ServiceInstanc
 
 // Close .
 func (d *NacosDiscovery) Close() error {
+	d.pool.Close()
 	return nil
 }

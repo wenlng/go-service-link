@@ -24,11 +24,12 @@ func setupDiscovery(serviceName, httPort, grpcPort string) error {
 
 		//Type:        servicediscovery.ServiceDiscoveryTypeNacos,
 		//Addrs:       "localhost:8848",
-		//Username: "nocos",
-		//Password: "nocos",
+		//Username: "nacos",
+		//Password: "nacos",
 
-		Type:        servicediscovery.ServiceDiscoveryTypeConsul,
-		Addrs:       "localhost:8500",
+		Type:  servicediscovery.ServiceDiscoveryTypeConsul,
+		Addrs: "localhost:8500",
+
 		TTL:         10 * time.Second,
 		KeepAlive:   3 * time.Second,
 		ServiceName: serviceName,
@@ -37,7 +38,7 @@ func setupDiscovery(serviceName, httPort, grpcPort string) error {
 		return err
 	}
 
-	discovery.SetLogOutputHookFunc(func(logType servicediscovery.ServiceDiscoveryLogType, message string) {
+	discovery.SetOutputLogCallback(func(logType servicediscovery.ServiceDiscoveryLogType, message string) {
 		if logType == servicediscovery.ServiceDiscoveryLogTypeInfo {
 			fmt.Fprintf(os.Stdout, "[Service Discovery Log]: %v\n", message)
 		} else {

@@ -60,7 +60,7 @@ func setupDiscovery(serviceName, httpPort, grpcPort string) error {
         return err
     }
     
-    discovery.SetLogOutputHookFunc(func(logType servicediscovery.ServiceDiscoveryLogType, message string) {
+    discovery.SetOutputLogCallback(func(logType servicediscovery.ServiceDiscoveryLogType, message string) {
         if logType == servicediscovery.ServiceDiscoveryLogTypeInfo {
             fmt.Fprintf(os.Stdout, "[Service Discovery Log]: %v\n", message)
         } else {
@@ -168,7 +168,7 @@ func setupDiscovery(serviceName string) error {
         return err
     }
 
-    discovery.SetLogOutputHookFunc(func(logType servicediscovery.ServiceDiscoveryLogType, message string) {
+    discovery.SetOutputLogCallback(func(logType servicediscovery.ServiceDiscoveryLogType, message string) {
         if logType == servicediscovery.ServiceDiscoveryLogTypeInfo {
             fmt.Fprintf(os.Stdout, "[Service Discovery Log]: %v\n", message)
         } else {

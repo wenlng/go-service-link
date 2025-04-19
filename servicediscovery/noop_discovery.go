@@ -14,8 +14,8 @@ import (
 
 type NoopDiscovery struct{}
 
-// SetLogOutputHookFunc .
-func (n *NoopDiscovery) SetLogOutputHookFunc(logOutputHookFunc LogOutputHookFunc) {
+// SetOutputLogCallback .
+func (n *NoopDiscovery) SetOutputLogCallback(outputLogCallback OutputLogCallback) {
 }
 
 // Register .

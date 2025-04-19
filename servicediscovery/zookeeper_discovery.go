@@ -8,35 +8,38 @@ package servicediscovery
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"math/rand"
-	"net"
 	"path"
+	"sync"
 	"time"
 
 	"github.com/go-zookeeper/zk"
 	"github.com/google/uuid"
 	"github.com/wenlng/go-service-discovery/base"
+	"github.com/wenlng/go-service-discovery/clientpool"
+	"github.com/wenlng/go-service-discovery/extraconfig"
 	"github.com/wenlng/go-service-discovery/helper"
 )
 
 // ZooKeeperDiscovery .
 type ZooKeeperDiscovery struct {
-	conn              *zk.Conn
+	//conn              *zk.Conn
 	instanceID        string
-	logOutputHookFunc LogOutputHookFunc
+	pool              *clientpool.ZooKeeperPool
+	outputLogCallback OutputLogCallback
 	config            ZooKeeperDiscoveryConfig
+
+	registeredServices map[string]registeredServiceInfo
+	mutex              sync.RWMutex
 }
 
 // ZooKeeperDiscoveryConfig .
 type ZooKeeperDiscoveryConfig struct {
-	Timeout           time.Duration
-	MaxBufferSize     int
-	MaxConnBufferSize int
+	extraconfig.ZooKeeperExtraConfig
 
 	address        []string
+	poolSize       int
 	ttl            time.Duration
 	keepAlive      time.Duration
 	maxRetries     int
@@ -48,6 +51,10 @@ type ZooKeeperDiscoveryConfig struct {
 
 // NewZooKeeperDiscovery .
 func NewZooKeeperDiscovery(config ZooKeeperDiscoveryConfig) (*ZooKeeperDiscovery, error) {
+	if config.poolSize <= 0 {
+		config.poolSize = 5
+	}
+
 	if config.maxRetries <= 0 {
 		config.maxRetries = 3
 	}
@@ -56,134 +63,69 @@ func NewZooKeeperDiscovery(config ZooKeeperDiscoveryConfig) (*ZooKeeperDiscovery
 		config.baseRetryDelay = 500 * time.Millisecond
 	}
 
-	conn, err := createZooKeeperClient(config)
+	pool, err := clientpool.NewZooKeeperPool(config.poolSize, config.address, &config.ZooKeeperExtraConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to ZooKeeper: %v", err)
+		return nil, err
 	}
 
 	return &ZooKeeperDiscovery{
-		conn:   conn,
-		config: config,
+		config:             config,
+		pool:               pool,
+		registeredServices: make(map[string]registeredServiceInfo),
 	}, nil
 }
 
-// tlsDialer create a dialer that supports TLS
-func tlsDialer(tlsConfig *tls.Config) zk.Dialer {
-	return func(network, address string, timeout time.Duration) (net.Conn, error) {
-		if tlsConfig == nil {
-			return net.DialTimeout(network, address, timeout)
-		}
-
-		dialer := &net.Dialer{Timeout: timeout}
-		return tls.DialWithDialer(dialer, network, address, tlsConfig)
-	}
-}
-
-// createNacosClient try to create a ZooKeeper client that includes a retry mechanism
-func createZooKeeperClient(config ZooKeeperDiscoveryConfig) (*zk.Conn, error) {
-	var conn *zk.Conn
-	var err error
-	var events <-chan zk.Event
-
-	var tlsConf *tls.Config
-	var daler zk.Dialer
-	if config.tlsConfig != nil {
-		tlsConf, err = base.CreateTLSConfig(config.tlsConfig)
-		if err != nil {
-			return nil, fmt.Errorf("the TLS configuration cannot be created: %v", err)
-		}
-		daler = tlsDialer(tlsConf)
-	}
-
-	for attempt := 1; attempt <= config.maxRetries; attempt++ {
-		if daler != nil {
-			conn, events, err = zk.Connect(config.address, time.Second)
-		} else {
-			conn, events, err = zk.Connect(config.address, time.Second)
-		}
-
-		if err != nil {
-			d := 1 << uint(attempt-1)
-			delay := time.Duration(float64(config.baseRetryDelay) * float64(d))
-			jitter := time.Duration(rand.Intn(100)) * time.Millisecond
-			time.Sleep(delay + jitter)
-			continue
-		}
-
-		timeout := time.After(5 * time.Second)
-		for conn.State() != zk.StateHasSession {
-			select {
-			case <-events:
-				continue
-			case <-timeout:
-				conn.Close()
-				return nil, fmt.Errorf("the connection to ZooKeeper has timed out")
-			case <-time.After(100 * time.Millisecond):
-				continue
-			}
-		}
-
-		// Add authentication information (digest authentication)
-		if config.username != "" || config.password != "" {
-			auth := fmt.Sprintf("digest:%s:%s", config.username, config.password)
-			err = conn.AddAuth("digest", []byte(auth))
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		return conn, nil
-	}
-
-	return nil, fmt.Errorf("after %d attempts, it still couldn't connect to ZooKeeper: %v", config.maxRetries, err)
-}
-
-// SetLogOutputHookFunc .
-func (d *ZooKeeperDiscovery) SetLogOutputHookFunc(logOutputHookFunc LogOutputHookFunc) {
-	d.logOutputHookFunc = logOutputHookFunc
+// SetOutputLogCallback .
+func (d *ZooKeeperDiscovery) SetOutputLogCallback(outputLogCallback OutputLogCallback) {
+	d.outputLogCallback = outputLogCallback
 }
 
 // outLog
 func (d *ZooKeeperDiscovery) outLog(logType ServiceDiscoveryLogType, message string) {
-	if d.logOutputHookFunc != nil {
-		d.logOutputHookFunc(logType, message)
+	if d.outputLogCallback != nil {
+		d.outputLogCallback(logType, message)
 	}
 }
 
-// withRetry perform the operation using the retry logic
-func (d *ZooKeeperDiscovery) withRetry(ctx context.Context, operation func() error) error {
-	var err error
-	for attempt := 1; attempt <= d.config.maxRetries; attempt++ {
-		err = operation()
-		if err == nil {
+// checkAndReRegisterServices check and re-register the service
+func (d *ZooKeeperDiscovery) checkAndReRegisterServices(ctx context.Context) error {
+	cli := d.pool.Get()
+	defer d.pool.Put(cli)
+
+	d.mutex.RLock()
+	services := make(map[string]registeredServiceInfo)
+	for k, v := range d.registeredServices {
+		services[k] = v
+	}
+	d.mutex.RUnlock()
+
+	for instanceID, svcInfo := range services {
+		p := path.Join("/services", svcInfo.ServiceName, instanceID)
+		operation := func() error {
+			exists, _, err := cli.Exists(p)
+			if err != nil {
+				return fmt.Errorf("failed to check the service registration status: %v", err)
+			}
+			if !exists {
+				d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The service has not been registered. Re-register: %s, instanceID: %s", svcInfo.ServiceName, instanceID))
+				return d.Register(ctx, svcInfo.ServiceName, instanceID, svcInfo.Host, svcInfo.HTTPPort, svcInfo.GRPCPort)
+			}
 			return nil
 		}
 
-		d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("Operation failed. the %d/%d attempt: %v", attempt, d.config.maxRetries, err))
-
-		dd := 1 << uint(attempt-1)
-		delay := time.Duration(float64(d.config.baseRetryDelay) * float64(dd))
-		jitter := time.Duration(rand.Intn(100)) * time.Millisecond
-		select {
-		case <-time.After(delay + jitter):
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-
-		if attempt < d.config.maxRetries {
-			newConn, clientErr := createZooKeeperClient(d.config)
-			if clientErr == nil {
-				d.conn.Close()
-				d.conn = newConn
-				d.outLog(ServiceDiscoveryLogTypeInfo, "Successfully reconnected to ZooKeeper")
-			}
+		if err := helper.WithRetry(ctx, operation); err != nil {
+			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+			return err
 		}
 	}
-	return fmt.Errorf("the operation failed after %d attempts: %v", d.config.maxRetries, err)
+	return nil
 }
 
 // Register .
 func (d *ZooKeeperDiscovery) Register(ctx context.Context, serviceName, instanceID, host, httpPort, grpcPort string) error {
+	cli := d.pool.Get()
+	defer d.pool.Put(cli)
+
 	if instanceID == "" {
 		instanceID = uuid.New().String()
 	}
@@ -209,57 +151,76 @@ func (d *ZooKeeperDiscovery) Register(ctx context.Context, serviceName, instance
 		return err
 	}
 
-	err = d.withRetry(ctx, func() error {
-		_, createErr := d.conn.Create(p, data, zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
+	operation := func() error {
+		_, createErr := cli.Create(p, data, zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
 		if createErr != nil && createErr != zk.ErrNodeExists {
 			return fmt.Errorf("the Zookeeper instance cannot be registered: %v", createErr)
 		}
 		return nil
-	})
-	if err != nil {
+	}
+	if err = helper.WithRetry(context.Background(), operation); err != nil {
 		return err
 	}
 
 	go d.keepAliveLoop(ctx, p, data)
 
+	d.mutex.Lock()
+	d.registeredServices[instanceID] = registeredServiceInfo{
+		ServiceName: serviceName,
+		InstanceID:  instanceID,
+		Host:        host,
+		HTTPPort:    httpPort,
+		GRPCPort:    grpcPort,
+	}
+	d.mutex.Unlock()
+
 	d.outLog(
 		ServiceDiscoveryLogTypeInfo,
-		fmt.Sprintf("Registered instance, service: %s, instanceId: %s, host: %s, http_port: %s, grpc_port: %s",
+		fmt.Sprintf("[ZooKeeperDiscovery] Registered instance, service: %s, instanceId: %s, host: %s, http_port: %s, grpc_port: %s",
 			serviceName, instanceID, host, httpPort, grpcPort))
+
 	return nil
 }
 
 // ensureParentNodes recursively create the parent node
 func (d *ZooKeeperDiscovery) ensureParentNodes(targetPath string) error {
+	cli := d.pool.Get()
+	defer d.pool.Put(cli)
+
 	parentPath := path.Dir(targetPath)
 	if parentPath == "/" || parentPath == "." {
 		return nil
 	}
 
 	var exists bool
-	err := d.withRetry(context.Background(), func() error {
+	operation := func() error {
 		var checkErr error
-		exists, _, checkErr = d.conn.Exists(parentPath)
+		exists, _, checkErr = cli.Exists(parentPath)
 		return checkErr
-	})
-	if err != nil {
+	}
+	if err := helper.WithRetry(context.Background(), operation); err != nil {
 		return fmt.Errorf("failed to check the parent node %s: %v", parentPath, err)
 	}
+
 	if exists {
 		return nil
 	}
 
-	if err = d.ensureParentNodes(parentPath); err != nil {
+	if err := d.ensureParentNodes(parentPath); err != nil {
 		return err
 	}
 
-	err = d.withRetry(context.Background(), func() error {
-		_, createErr := d.conn.Create(parentPath, []byte{}, 0, zk.WorldACL(zk.PermAll))
+	operation = func() error {
+		_, createErr := cli.Create(parentPath, []byte{}, 0, zk.WorldACL(zk.PermAll))
 		if createErr != nil && createErr != zk.ErrNodeExists {
 			return fmt.Errorf("the parent node of Zookeeper cannot be created %s: %v", parentPath, createErr)
 		}
 		return nil
-	})
+	}
+	if err := helper.WithRetry(context.Background(), operation); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -270,25 +231,35 @@ func (d *ZooKeeperDiscovery) keepAliveLoop(ctx context.Context, path string, dat
 	for {
 		select {
 		case <-ticker.C:
+			cli := d.pool.Get()
 			var exists bool
-			err := d.withRetry(ctx, func() error {
+			operation := func() error {
 				var checkErr error
-				exists, _, checkErr = d.conn.Exists(path)
+				exists, _, checkErr = cli.Exists(path)
 				return checkErr
-			})
-			if err != nil {
-				d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("Failed to check instance: %v", err))
+			}
+			if err := helper.WithRetry(context.Background(), operation); err != nil {
+				d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[ZooKeeperDiscovery] Failed to check instance: %v", err))
+				if err := d.checkAndReRegisterServices(ctx); err != nil {
+					d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+				}
+				d.pool.Put(cli)
 				continue
 			}
+
 			if !exists {
-				err = d.withRetry(ctx, func() error {
-					_, createErr := d.conn.Create(path, data, zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
+				operation = func() error {
+					_, createErr := cli.Create(path, data, zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
 					if createErr != nil && createErr != zk.ErrNodeExists {
 						return fmt.Errorf("the Zoopeeker instance cannot be recreated: %v", createErr)
 					}
 					return nil
-				})
+				}
+				if err := helper.WithRetry(context.Background(), operation); err != nil {
+					d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[ZooKeeperDiscovery] Failed to check instance: %v", err))
+				}
 			}
+			d.pool.Put(cli)
 		case <-ctx.Done():
 			d.outLog(ServiceDiscoveryLogTypeInfo, "Stopping keepalive")
 			return
@@ -298,21 +269,28 @@ func (d *ZooKeeperDiscovery) keepAliveLoop(ctx context.Context, path string, dat
 
 // Deregister .
 func (d *ZooKeeperDiscovery) Deregister(ctx context.Context, serviceName, instanceID string) error {
+	cli := d.pool.Get()
+	defer d.pool.Put(cli)
+
 	p := path.Join("/services", serviceName, instanceID)
-	err := d.withRetry(ctx, func() error {
-		deleteErr := d.conn.Delete(p, -1)
+	operation := func() error {
+		deleteErr := cli.Delete(p, -1)
 		if deleteErr != nil && deleteErr != zk.ErrNoNode {
 			return fmt.Errorf("failed to deregister instance: %v", deleteErr)
 		}
 		return nil
-	})
-	if err != nil {
+	}
+	if err := helper.WithRetry(context.Background(), operation); err != nil {
 		return err
 	}
 
+	d.mutex.Lock()
+	delete(d.registeredServices, instanceID)
+	d.mutex.Unlock()
+
 	d.outLog(
 		ServiceDiscoveryLogTypeInfo,
-		fmt.Sprintf("Deregistered instance, service: %s, instanceId: %s", serviceName, instanceID))
+		fmt.Sprintf("[ZooKeeperDiscovery] Deregistered instance, service: %s, instanceId: %s", serviceName, instanceID))
 
 	return nil
 }
@@ -326,7 +304,7 @@ func (d *ZooKeeperDiscovery) Watch(ctx context.Context, serviceName string) (cha
 		for {
 			instances, err := d.GetInstances(serviceName)
 			if err != nil {
-				d.outLog(ServiceDiscoveryLogTypeError, fmt.Sprintf("Failed to get instances: %v", err))
+				d.outLog(ServiceDiscoveryLogTypeError, fmt.Sprintf("[ZooKeeperDiscovery] Failed to get instances: %v", err))
 				time.Sleep(time.Second)
 				continue
 			}
@@ -335,9 +313,11 @@ func (d *ZooKeeperDiscovery) Watch(ctx context.Context, serviceName string) (cha
 			case <-ctx.Done():
 				return
 			}
-			_, _, wch, err := d.conn.ChildrenW(prefix)
+			cli := d.pool.Get()
+			_, _, wch, err := cli.ChildrenW(prefix)
+			d.pool.Put(cli)
 			if err != nil {
-				d.outLog(ServiceDiscoveryLogTypeError, fmt.Sprintf("Failed to watch children: %v", err))
+				d.outLog(ServiceDiscoveryLogTypeError, fmt.Sprintf("[ZooKeeperDiscovery] Failed to watch children: %v", err))
 				time.Sleep(time.Second)
 				continue
 			}
@@ -353,26 +333,35 @@ func (d *ZooKeeperDiscovery) Watch(ctx context.Context, serviceName string) (cha
 
 // GetInstances .
 func (d *ZooKeeperDiscovery) GetInstances(serviceName string) ([]base.ServiceInstance, error) {
+	cli := d.pool.Get()
+	defer d.pool.Put(cli)
+
 	prefix := path.Join("/services", serviceName)
+
 	var children []string
-	err := d.withRetry(context.Background(), func() error {
+	operation := func() error {
 		var getErr error
-		children, _, getErr = d.conn.Children(prefix)
+		children, _, getErr = cli.Children(prefix)
 		return getErr
-	})
-	if err != nil {
+	}
+	if err := helper.WithRetry(context.Background(), operation); err != nil {
 		return nil, fmt.Errorf("failed to get instances: %v", err)
 	}
+
 	var instances []base.ServiceInstance
 	for _, child := range children {
-		data, _, err := d.conn.Get(path.Join(prefix, child))
+		data, _, err := cli.Get(path.Join(prefix, child))
 		if err != nil {
-			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("Failed to get instance data: %v", err))
+			if err = d.checkAndReRegisterServices(context.Background()); err != nil {
+				d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+			}
+
+			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[ZooKeeperDiscovery] Failed to get instance data: %v", err))
 			continue
 		}
 		var inst base.ServiceInstance
 		if err = json.Unmarshal(data, &inst); err != nil {
-			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("Failed to unmarshal instance: %v", err))
+			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[ZooKeeperDiscovery] Failed to unmarshal instance: %v", err))
 			continue
 		}
 		instances = append(instances, inst)
@@ -382,6 +371,6 @@ func (d *ZooKeeperDiscovery) GetInstances(serviceName string) ([]base.ServiceIns
 
 // Close .
 func (d *ZooKeeperDiscovery) Close() error {
-	d.conn.Close()
+	d.pool.Close()
 	return nil
 }

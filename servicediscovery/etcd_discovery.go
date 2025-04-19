@@ -10,49 +10,37 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"path"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/wenlng/go-service-discovery/base"
+	"github.com/wenlng/go-service-discovery/clientpool"
+	"github.com/wenlng/go-service-discovery/extraconfig"
 	"github.com/wenlng/go-service-discovery/helper"
 	"go.etcd.io/etcd/client/v3"
-	"go.uber.org/zap"
-	"google.golang.org/grpc"
 )
 
 // EtcdDiscovery .
 type EtcdDiscovery struct {
-	client            *clientv3.Client
+	//client            *clientv3.Client
 	leaseID           clientv3.LeaseID
 	keepAliveCh       <-chan *clientv3.LeaseKeepAliveResponse
-	logOutputHookFunc LogOutputHookFunc
+	pool              *clientpool.EtcdPool
+	outputLogCallback OutputLogCallback
+	config            EtcdDiscoveryConfig
 
-	config EtcdDiscoveryConfig
+	registeredServices map[string]registeredServiceInfo
+	mutex              sync.RWMutex
 }
 
 // EtcdDiscoveryConfig .
 type EtcdDiscoveryConfig struct {
-	AutoSyncInterval      time.Duration
-	DialTimeout           time.Duration
-	DialKeepAliveTime     time.Duration
-	DialKeepAliveTimeout  time.Duration
-	MaxCallSendMsgSize    int
-	MaxCallRecvMsgSize    int
-	Username              string
-	Password              string
-	RejectOldCluster      bool
-	DialOptions           []grpc.DialOption
-	Context               context.Context
-	Logger                *zap.Logger
-	LogConfig             *zap.Config
-	PermitWithoutStream   bool
-	MaxUnaryRetries       uint
-	BackoffWaitBetween    time.Duration
-	BackoffJitterFraction float64
+	extraconfig.EtcdExtraConfig
 
 	address        []string
+	poolSize       int
 	ttl            time.Duration
 	keepAlive      time.Duration
 	maxRetries     int
@@ -64,6 +52,10 @@ type EtcdDiscoveryConfig struct {
 
 // NewEtcdDiscovery .
 func NewEtcdDiscovery(config EtcdDiscoveryConfig) (*EtcdDiscovery, error) {
+	if config.poolSize <= 0 {
+		config.poolSize = 5
+	}
+
 	if config.maxRetries <= 0 {
 		config.maxRetries = 3
 	}
@@ -72,166 +64,84 @@ func NewEtcdDiscovery(config EtcdDiscoveryConfig) (*EtcdDiscovery, error) {
 		config.baseRetryDelay = 500 * time.Millisecond
 	}
 
-	client, err := createEtcdClient(config)
+	pool, err := clientpool.NewEtcdPool(config.poolSize, config.address, &config.EtcdExtraConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to etcd: %v", err)
+		return nil, err
 	}
 
 	return &EtcdDiscovery{
-		client: client,
-		config: config,
+		config:             config,
+		pool:               pool,
+		registeredServices: make(map[string]registeredServiceInfo),
 	}, nil
 }
 
-// createEtcdClient try to create a Etcd client that includes a retry mechanism
-func createEtcdClient(config EtcdDiscoveryConfig) (*clientv3.Client, error) {
-	cfg := clientv3.Config{
-		Endpoints:   config.address,
-		DialTimeout: 5 * time.Second,
-	}
-
-	if config.username != "" {
-		cfg.Username = config.username
-	}
-
-	if config.password != "" {
-		cfg.Password = config.password
-	}
-
-	if helper.IsDurationSet(config.AutoSyncInterval) {
-		cfg.AutoSyncInterval = config.AutoSyncInterval
-	}
-	if helper.IsDurationSet(config.DialTimeout) {
-		cfg.DialTimeout = config.DialTimeout
-	}
-	if helper.IsDurationSet(config.DialKeepAliveTime) {
-		cfg.DialKeepAliveTime = config.DialKeepAliveTime
-	}
-	if helper.IsDurationSet(config.DialKeepAliveTimeout) {
-		cfg.DialKeepAliveTimeout = config.DialKeepAliveTimeout
-	}
-	if config.MaxCallSendMsgSize > 0 {
-		cfg.MaxCallSendMsgSize = config.MaxCallSendMsgSize
-	}
-	if config.MaxCallRecvMsgSize > 0 {
-		cfg.MaxCallRecvMsgSize = config.MaxCallRecvMsgSize
-	}
-
-	if config.RejectOldCluster {
-		cfg.RejectOldCluster = config.RejectOldCluster
-	}
-	if len(config.DialOptions) > 0 {
-		cfg.DialOptions = config.DialOptions
-	}
-	if config.Context != nil {
-		cfg.Context = config.Context
-	}
-	if config.Logger != nil {
-		cfg.Logger = config.Logger
-	}
-	if config.LogConfig != nil {
-		cfg.LogConfig = config.LogConfig
-	}
-	if config.PermitWithoutStream {
-		cfg.PermitWithoutStream = config.PermitWithoutStream
-	}
-	if config.MaxUnaryRetries > 0 {
-		cfg.MaxUnaryRetries = config.MaxUnaryRetries
-	}
-	if helper.IsDurationSet(config.BackoffWaitBetween) {
-		cfg.BackoffWaitBetween = config.BackoffWaitBetween
-	}
-	if config.BackoffJitterFraction > 0.0 {
-		cfg.BackoffJitterFraction = config.BackoffJitterFraction
-	}
-
-	if config.tlsConfig != nil {
-		var err error
-		cfg.TLS, err = base.CreateTLSConfig(config.tlsConfig)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	var client *clientv3.Client
-	var err error
-
-	for attempt := 1; attempt <= config.maxRetries; attempt++ {
-		client, err = clientv3.New(cfg)
-		if err == nil {
-			return client, nil
-		}
-
-		d := 1 << uint(attempt-1)
-		delay := time.Duration(float64(config.baseRetryDelay) * float64(d))
-		jitter := time.Duration(rand.Intn(100)) * time.Millisecond
-		time.Sleep(delay + jitter)
-	}
-
-	return nil, fmt.Errorf("after %d attempts, it still couldn't connect to Etcd: %v", config.maxRetries, err)
-}
-
-// SetLogOutputHookFunc .
-func (d *EtcdDiscovery) SetLogOutputHookFunc(logOutputHookFunc LogOutputHookFunc) {
-	d.logOutputHookFunc = logOutputHookFunc
+// SetOutputLogCallback .
+func (d *EtcdDiscovery) SetOutputLogCallback(outputLogCallback OutputLogCallback) {
+	d.outputLogCallback = outputLogCallback
 }
 
 // outLog
 func (d *EtcdDiscovery) outLog(logType ServiceDiscoveryLogType, message string) {
-	if d.logOutputHookFunc != nil {
-		d.logOutputHookFunc(logType, message)
+	if d.outputLogCallback != nil {
+		d.outputLogCallback(logType, message)
 	}
 }
 
-// withRetry perform the operation using the retry logic
-func (d *EtcdDiscovery) withRetry(ctx context.Context, operation func() error) error {
-	var err error
-	for attempt := 1; attempt <= d.config.maxRetries; attempt++ {
-		err = operation()
-		if err == nil {
+// checkAndReRegisterServices check and re-register the service
+func (d *EtcdDiscovery) checkAndReRegisterServices(ctx context.Context) error {
+	cli := d.pool.Get()
+	defer d.pool.Put(cli)
+
+	d.mutex.RLock()
+	services := make(map[string]registeredServiceInfo)
+	for k, v := range d.registeredServices {
+		services[k] = v
+	}
+	d.mutex.RUnlock()
+
+	for instanceID, svcInfo := range services {
+		key := path.Join("/services", svcInfo.ServiceName, instanceID)
+		operation := func() error {
+			resp, err := cli.Get(ctx, key)
+			if err != nil {
+				return fmt.Errorf("failed to check the service registration status: %v", err)
+			}
+			if len(resp.Kvs) == 0 {
+				d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The service has not been registered. Re-register: %s, instanceID: %s", svcInfo.ServiceName, instanceID))
+				return d.Register(ctx, svcInfo.ServiceName, instanceID, svcInfo.Host, svcInfo.HTTPPort, svcInfo.GRPCPort)
+			}
 			return nil
 		}
 
-		d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("Operation failed. the %d/%d attempt: %v", attempt, d.config.maxRetries, err))
-
-		dd := 1 << uint(attempt-1)
-		delay := time.Duration(float64(d.config.baseRetryDelay) * float64(dd))
-		jitter := time.Duration(rand.Intn(100)) * time.Millisecond
-		select {
-		case <-time.After(delay + jitter):
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-
-		if attempt < d.config.maxRetries {
-			newClient, clientErr := createEtcdClient(d.config)
-			if clientErr == nil {
-				d.client.Close()
-				d.client = newClient
-				d.outLog(ServiceDiscoveryLogTypeInfo, "Successfully reconnected to Etcd")
-			}
+		if err := helper.WithRetry(ctx, operation); err != nil {
+			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+			return err
 		}
 	}
-	return fmt.Errorf("the operation failed after %d attempts: %v", d.config.maxRetries, err)
+	return nil
 }
 
 // Register .
 func (d *EtcdDiscovery) Register(ctx context.Context, serviceName, instanceID, host, httpPort, grpcPort string) error {
+	cli := d.pool.Get()
+	defer d.pool.Put(cli)
+
 	if instanceID == "" {
 		instanceID = uuid.New().String()
 	}
 
 	var leaseResp *clientv3.LeaseGrantResponse
-	err := d.withRetry(ctx, func() error {
+	operation := func() error {
 		var grantErr error
-		leaseResp, grantErr = d.client.Grant(ctx, int64(d.config.ttl/time.Second))
+		leaseResp, grantErr = cli.Grant(ctx, int64(d.config.ttl/time.Second))
 		return grantErr
-	})
-	if err != nil {
+	}
+	if err := helper.WithRetry(context.Background(), operation); err != nil {
 		return fmt.Errorf("failed to grant lease: %v", err)
 	}
-	d.leaseID = leaseResp.ID
 
+	d.leaseID = leaseResp.ID
 	data, err := json.Marshal(base.ServiceInstance{
 		InstanceID: instanceID,
 		Host:       host,
@@ -249,28 +159,38 @@ func (d *EtcdDiscovery) Register(ctx context.Context, serviceName, instanceID, h
 	}
 
 	key := path.Join("/services", serviceName, instanceID)
-	err = d.withRetry(ctx, func() error {
-		_, putErr := d.client.Put(ctx, key, string(data), clientv3.WithLease(d.leaseID))
+	operation = func() error {
+		_, putErr := cli.Put(ctx, key, string(data), clientv3.WithLease(d.leaseID))
 		return putErr
-	})
-	if err != nil {
+	}
+	if err = helper.WithRetry(context.Background(), operation); err != nil {
 		return fmt.Errorf("failed to register instance: %v", err)
 	}
 
-	err = d.withRetry(ctx, func() error {
+	operation = func() error {
 		var keepAliveErr error
-		d.keepAliveCh, keepAliveErr = d.client.KeepAlive(ctx, d.leaseID)
+		d.keepAliveCh, keepAliveErr = cli.KeepAlive(ctx, d.leaseID)
 		return keepAliveErr
-	})
-	if err != nil {
+	}
+	if err = helper.WithRetry(context.Background(), operation); err != nil {
 		return fmt.Errorf("failed to start keepalive: %v", err)
 	}
+
+	d.mutex.Lock()
+	d.registeredServices[instanceID] = registeredServiceInfo{
+		ServiceName: serviceName,
+		InstanceID:  instanceID,
+		Host:        host,
+		HTTPPort:    httpPort,
+		GRPCPort:    grpcPort,
+	}
+	d.mutex.Unlock()
 
 	go d.watchKeepAlive(ctx)
 
 	d.outLog(
 		ServiceDiscoveryLogTypeInfo,
-		fmt.Sprintf("Registered instance, service: %s, instanceId: %s, host: %s, http_port: %s, grpc_port: %s",
+		fmt.Sprintf("[EtcdDiscovery] Registered instance, service: %s, instanceId: %s, host: %s, http_port: %s, grpc_port: %s",
 			serviceName, instanceID, host, httpPort, grpcPort))
 	return nil
 }
@@ -294,57 +214,76 @@ func (d *EtcdDiscovery) watchKeepAlive(ctx context.Context) {
 
 // recoverKeepAlive try to restore the heartbeat
 func (d *EtcdDiscovery) recoverKeepAlive(ctx context.Context) {
-	err := d.withRetry(ctx, func() error {
+	cli := d.pool.Get()
+	defer d.pool.Put(cli)
+
+	operation := func() error {
 		var keepAliveErr error
-		d.keepAliveCh, keepAliveErr = d.client.KeepAlive(ctx, d.leaseID)
+		d.keepAliveCh, keepAliveErr = cli.KeepAlive(ctx, d.leaseID)
 		return keepAliveErr
-	})
-	if err != nil {
-		d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("Failed to restore the Etcd heartbeat: %v", err))
+	}
+	if err := helper.WithRetry(context.Background(), operation); err != nil {
+		d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[EtcdDiscovery] Failed to restore the Etcd heartbeat: %v", err))
 		return
 	}
-	d.outLog(ServiceDiscoveryLogTypeInfo, "The heart rate of Ectd was successfully restored")
+
+	if err := d.checkAndReRegisterServices(ctx); err != nil {
+		d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+	}
+
 	go d.watchKeepAlive(ctx)
+	d.outLog(ServiceDiscoveryLogTypeInfo, "The heart rate of Ectd was successfully restored")
 }
 
 // Deregister .
 func (d *EtcdDiscovery) Deregister(ctx context.Context, serviceName, instanceID string) error {
+	cli := d.pool.Get()
+	defer d.pool.Put(cli)
+
 	key := path.Join("/services", serviceName, instanceID)
-	err := d.withRetry(ctx, func() error {
-		_, deleteErr := d.client.Delete(ctx, key)
+	operation := func() error {
+		_, deleteErr := cli.Delete(ctx, key)
 		return deleteErr
-	})
-	if err != nil {
+	}
+	if err := helper.WithRetry(context.Background(), operation); err != nil {
 		return fmt.Errorf("failed to deregister instance: %v", err)
 	}
+
 	if d.leaseID != 0 {
-		err = d.withRetry(ctx, func() error {
-			_, revokeErr := d.client.Revoke(ctx, d.leaseID)
+		operation = func() error {
+			_, revokeErr := cli.Revoke(ctx, d.leaseID)
 			return revokeErr
-		})
-		if err != nil {
-			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("Failed to revoke lease: %v", err))
+		}
+		if err := helper.WithRetry(context.Background(), operation); err != nil {
+			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[EtcdDiscovery] Failed to revoke lease: %v", err))
 		}
 	}
 
+	d.mutex.Lock()
+	delete(d.registeredServices, instanceID)
+	d.mutex.Unlock()
+
 	d.outLog(
 		ServiceDiscoveryLogTypeInfo,
-		fmt.Sprintf("Deregistered instance, service: %s, instanceId: %s", serviceName, instanceID))
+		fmt.Sprintf("[EtcdDiscovery] Deregistered instance, service: %s, instanceId: %s", serviceName, instanceID))
 
 	return nil
 }
 
 // Watch .
 func (d *EtcdDiscovery) Watch(ctx context.Context, serviceName string) (chan []base.ServiceInstance, error) {
+	cli := d.pool.Get()
+	defer d.pool.Put(cli)
+
 	prefix := path.Join("/services", serviceName)
 	ch := make(chan []base.ServiceInstance, 1)
-	rch := d.client.Watch(ctx, prefix, clientv3.WithPrefix())
+	rch := cli.Watch(ctx, prefix, clientv3.WithPrefix())
 	go func() {
 		defer close(ch)
 		for resp := range rch {
 			instances, err := d.getInstancesFromEvents(serviceName, resp.Events)
 			if err != nil {
-				d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("Failed to parse watch events: %v", err))
+				d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[EtcdDiscovery] Failed to parse watch events: %v", err))
 				go d.recoverWatch(ctx, serviceName, ch)
 				continue
 			}
@@ -368,17 +307,25 @@ func (d *EtcdDiscovery) Watch(ctx context.Context, serviceName string) (chan []b
 
 // recoverWatch attempt to restore surveillance
 func (d *EtcdDiscovery) recoverWatch(ctx context.Context, serviceName string, ch chan []base.ServiceInstance) {
+	cli := d.pool.Get()
+	defer d.pool.Put(cli)
+
 	prefix := path.Join("/services", serviceName)
-	rch := d.client.Watch(ctx, prefix, clientv3.WithPrefix())
+	rch := cli.Watch(ctx, prefix, clientv3.WithPrefix())
+
+	if err := d.checkAndReRegisterServices(ctx); err != nil {
+		d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+	}
+
 	go func() {
 		for resp := range rch {
 			if resp.Err() != nil {
-				d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("Monitor Etcd event errors: %v", resp.Err()))
+				d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[EtcdDiscovery] Monitor Etcd event errors: %v", resp.Err()))
 				continue
 			}
 			instances, err := d.getInstancesFromEvents(serviceName, resp.Events)
 			if err != nil {
-				d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The Etcd monitoring event cannot be parsed: %v", err))
+				d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[EtcdDiscovery] The Etcd monitoring event cannot be parsed: %v", err))
 				continue
 			}
 
@@ -395,25 +342,32 @@ func (d *EtcdDiscovery) recoverWatch(ctx context.Context, serviceName string, ch
 
 // GetInstances .
 func (d *EtcdDiscovery) GetInstances(serviceName string) ([]base.ServiceInstance, error) {
+	cli := d.pool.Get()
+	defer d.pool.Put(cli)
+
 	prefix := path.Join("/services", serviceName)
 
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*10))
 	defer cancel()
 
 	var resp *clientv3.GetResponse
-	err := d.withRetry(ctx, func() error {
+	operation := func() error {
 		var getErr error
-		resp, getErr = d.client.Get(ctx, prefix, clientv3.WithPrefix())
+		resp, getErr = cli.Get(ctx, prefix, clientv3.WithPrefix())
 		return getErr
-	})
-	if err != nil {
+	}
+	if err := helper.WithRetry(context.Background(), operation); err != nil {
+		if err = d.checkAndReRegisterServices(ctx); err != nil {
+			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+		}
 		return nil, fmt.Errorf("failed to get instances: %v", err)
 	}
+
 	var instances []base.ServiceInstance
 	for _, kv := range resp.Kvs {
 		var inst base.ServiceInstance
-		if err = json.Unmarshal(kv.Value, &inst); err != nil {
-			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("Failed to unmarshal instance: %v", err))
+		if err := json.Unmarshal(kv.Value, &inst); err != nil {
+			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[EtcdDiscovery] Failed to unmarshal instance: %v", err))
 			continue
 		}
 		instances = append(instances, inst)
@@ -432,11 +386,15 @@ func (d *EtcdDiscovery) getInstancesFromEvents(serviceName string, events []*cli
 
 // Close .
 func (d *EtcdDiscovery) Close() error {
+	cli := d.pool.Get()
+
 	if d.leaseID != 0 {
-		_, err := d.client.Revoke(context.Background(), d.leaseID)
+		_, err := cli.Revoke(context.Background(), d.leaseID)
 		if err != nil {
-			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("Failed to revoke lease on close: %v", err))
+			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[EtcdDiscovery] Failed to revoke lease on close: %v", err))
 		}
 	}
-	return d.client.Close()
+
+	d.pool.Close()
+	return nil
 }

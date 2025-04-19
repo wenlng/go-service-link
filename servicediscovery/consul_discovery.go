@@ -9,38 +9,34 @@ package servicediscovery
 import (
 	"context"
 	"fmt"
-	"math/rand"
-	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/hashicorp/consul/api"
 	"github.com/wenlng/go-service-discovery/base"
+	"github.com/wenlng/go-service-discovery/clientpool"
+	"github.com/wenlng/go-service-discovery/extraconfig"
 	"github.com/wenlng/go-service-discovery/helper"
 )
 
 // ConsulDiscovery .
 type ConsulDiscovery struct {
-	client            *api.Client
-	logOutputHookFunc LogOutputHookFunc
+	pool              *clientpool.ConsulPool
+	outputLogCallback OutputLogCallback
 	config            ConsulDiscoveryConfig
+
+	registeredServices map[string]registeredServiceInfo
+	mutex              sync.RWMutex
 }
 
 // ConsulDiscoveryConfig .
 type ConsulDiscoveryConfig struct {
-	Scheme     string
-	PathPrefix string
-	Datacenter string
-	Transport  *http.Transport
-	HttpClient *http.Client
-	WaitTime   time.Duration
-	Token      string
-	TokenFile  string
-	Namespace  string
-	Partition  string
+	extraconfig.ConsulExtraConfig
 
 	address        []string
+	poolSize       int
 	ttl            time.Duration
 	keepAlive      time.Duration
 	maxRetries     int
@@ -52,6 +48,10 @@ type ConsulDiscoveryConfig struct {
 
 // NewConsulDiscovery .
 func NewConsulDiscovery(config ConsulDiscoveryConfig) (*ConsulDiscovery, error) {
+	if config.poolSize <= 0 {
+		config.poolSize = 5
+	}
+
 	if config.maxRetries <= 0 {
 		config.maxRetries = 3
 	}
@@ -60,136 +60,35 @@ func NewConsulDiscovery(config ConsulDiscoveryConfig) (*ConsulDiscovery, error) 
 		config.baseRetryDelay = 500 * time.Millisecond
 	}
 
-	client, err := createConsulClient(config)
+	pool, err := clientpool.NewConsulPool(config.poolSize, config.address, &config.ConsulExtraConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Consul: %v", err)
+		return nil, err
 	}
 
 	return &ConsulDiscovery{
-		client: client,
-		config: config,
+		config:             config,
+		pool:               pool,
+		registeredServices: make(map[string]registeredServiceInfo),
 	}, nil
 }
 
-// createConsulClient try to create a Consul client that includes a retry mechanism
-func createConsulClient(config ConsulDiscoveryConfig) (*api.Client, error) {
-	var client *api.Client
-	var err error
-
-	cfg := api.DefaultConfig()
-	cfg.Address = config.address[0]
-
-	if config.username != "" || config.password != "" {
-		cfg.HttpAuth = &api.HttpBasicAuth{
-			Username: config.username,
-			Password: config.password,
-		}
-	}
-
-	if config.tlsConfig != nil {
-		cfg.TLSConfig = api.TLSConfig{
-			Address:  config.tlsConfig.Address,
-			CAFile:   config.tlsConfig.CAFile,
-			KeyFile:  config.tlsConfig.KeyFile,
-			CertFile: config.tlsConfig.CertFile,
-		}
-	}
-
-	if helper.IsDurationSet(config.WaitTime) {
-		cfg.WaitTime = config.WaitTime
-	}
-	if config.Scheme != "" {
-		cfg.Scheme = config.Scheme
-	}
-	if config.PathPrefix != "" {
-		cfg.PathPrefix = config.PathPrefix
-	}
-	if config.Datacenter != "" {
-		cfg.Datacenter = config.Datacenter
-	}
-	if config.Transport != nil {
-		cfg.Transport = config.Transport
-	}
-	if config.HttpClient != nil {
-		cfg.HttpClient = config.HttpClient
-	}
-	if config.Token != "" {
-		cfg.Token = config.Token
-	}
-	if config.TokenFile != "" {
-		cfg.TokenFile = config.TokenFile
-	}
-	if config.Namespace != "" {
-		cfg.Namespace = config.Namespace
-	}
-	if config.Partition != "" {
-		cfg.Partition = config.Partition
-	}
-
-	client, err = api.NewClient(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Consul: %v", err)
-	}
-
-	for attempt := 1; attempt <= config.maxRetries; attempt++ {
-		client, err = api.NewClient(cfg)
-		if err == nil {
-			return client, nil
-		}
-
-		// Calculate the delay with random jitter
-		b := 1 << uint(attempt-1)
-		delay := time.Duration(float64(config.baseRetryDelay) * float64(b))
-		jitter := time.Duration(rand.Intn(100)) * time.Millisecond
-		time.Sleep(delay + jitter)
-	}
-
-	return nil, fmt.Errorf("after %d attempts, it still couldn't connect to Consul: %v", config.maxRetries, err)
-}
-
-// withRetry perform the operation using the retry logic
-func (d *ConsulDiscovery) withRetry(operation func() error) error {
-	var err error
-	for attempt := 1; attempt <= d.config.maxRetries; attempt++ {
-		err = operation()
-		if err == nil {
-			return nil
-		}
-
-		d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("Operation failed. the %d/%d attempt: %v", attempt, d.config.maxRetries, err))
-
-		// Calculate the delay with random jitter
-		b := 1 << uint(attempt-1)
-		delay := time.Duration(float64(d.config.baseRetryDelay) * float64(b))
-		jitter := time.Duration(rand.Intn(100)) * time.Millisecond
-		time.Sleep(delay + jitter)
-
-		// If the client fails, try to reconnect
-		if attempt < d.config.maxRetries {
-			newClient, clientErr := createConsulClient(d.config)
-			if clientErr == nil {
-				d.client = newClient
-				d.outLog(ServiceDiscoveryLogTypeInfo, "Successfully reconnected to Consul")
-			}
-		}
-	}
-	return fmt.Errorf("the operation failed after %d attempts: %v", d.config.maxRetries, err)
-}
-
-// SetLogOutputHookFunc Set the log out hook function
-func (d *ConsulDiscovery) SetLogOutputHookFunc(logOutputHookFunc LogOutputHookFunc) {
-	d.logOutputHookFunc = logOutputHookFunc
+// SetOutputLogCallback Set the log out hook function
+func (d *ConsulDiscovery) SetOutputLogCallback(outputLogCallback OutputLogCallback) {
+	d.outputLogCallback = outputLogCallback
 }
 
 // outLog
 func (d *ConsulDiscovery) outLog(logType ServiceDiscoveryLogType, message string) {
-	if d.logOutputHookFunc != nil {
-		d.logOutputHookFunc(logType, message)
+	if d.outputLogCallback != nil {
+		d.outputLogCallback(logType, message)
 	}
 }
 
 // Register .
 func (d *ConsulDiscovery) Register(ctx context.Context, serviceName, instanceID, host, httpPort, grpcPort string) error {
+	cli := d.pool.Get()
+	defer d.pool.Put(cli)
+
 	if instanceID == "" {
 		instanceID = uuid.New().String()
 	}
@@ -211,19 +110,72 @@ func (d *ConsulDiscovery) Register(ctx context.Context, serviceName, instanceID,
 			DeregisterCriticalServiceAfter: (d.config.ttl * 2).String(),
 		},
 	}
-	err := d.withRetry(func() error {
-		return d.client.Agent().ServiceRegister(registration)
-	})
-	if err != nil {
+
+	operation := func() error {
+		return cli.Agent().ServiceRegister(registration)
+	}
+	if err := helper.WithRetry(ctx, operation); err != nil {
 		return fmt.Errorf("failed to register instance: %v", err)
 	}
+
+	d.mutex.Lock()
+	d.registeredServices[instanceID] = registeredServiceInfo{
+		ServiceName: serviceName,
+		InstanceID:  instanceID,
+		Host:        host,
+		HTTPPort:    httpPort,
+		GRPCPort:    grpcPort,
+	}
+	d.mutex.Unlock()
 
 	go d.keepAliveLoop(ctx, instanceID)
 
 	d.outLog(
 		ServiceDiscoveryLogTypeInfo,
-		fmt.Sprintf("Registered instance, service: %s, instanceId: %s, host: %s, http_port: %s, grpc_port: %s",
+		fmt.Sprintf("[ConsulDiscovery] Registered instance, service: %s, instanceId: %s, host: %s, http_port: %s, grpc_port: %s",
 			serviceName, instanceID, host, httpPort, grpcPort))
+	return nil
+}
+
+// checkAndReRegisterServices Check and re-register the service
+func (d *ConsulDiscovery) checkAndReRegisterServices(ctx context.Context) error {
+	cli := d.pool.Get()
+	defer d.pool.Put(cli)
+
+	d.mutex.RLock()
+	services := make(map[string]registeredServiceInfo)
+	for k, v := range d.registeredServices {
+		services[k] = v
+	}
+	d.mutex.RUnlock()
+
+	for instanceID, svcInfo := range services {
+		operation := func() error {
+			services, _, err := cli.Health().Service(svcInfo.ServiceName, "", true, &api.QueryOptions{})
+			if err != nil {
+				return fmt.Errorf("failed to check the service registration status: %v", err)
+			}
+
+			registered := false
+			for _, svc := range services {
+				if svc.Service.ID == instanceID {
+					registered = true
+					break
+				}
+			}
+
+			if !registered {
+				d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[ConsulDiscovery] The service has not been registered. Re-register: %s, instanceID: %s", svcInfo.ServiceName, instanceID))
+				return d.Register(ctx, svcInfo.ServiceName, instanceID, svcInfo.Host, svcInfo.HTTPPort, svcInfo.GRPCPort)
+			}
+			return nil
+		}
+
+		if err := helper.WithRetry(ctx, operation); err != nil {
+			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[ConsulDiscovery] The re-registration service failed: %v", err))
+			return err
+		}
+	}
 	return nil
 }
 
@@ -231,17 +183,23 @@ func (d *ConsulDiscovery) Register(ctx context.Context, serviceName, instanceID,
 func (d *ConsulDiscovery) keepAliveLoop(ctx context.Context, instanceID string) {
 	ticker := time.NewTicker(d.config.keepAlive)
 	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ticker.C:
-			err := d.withRetry(func() error {
-				return d.client.Agent().PassTTL("service:"+instanceID, "keepalive")
-			})
-			if err != nil {
-				d.outLog(ServiceDiscoveryLogTypeWarn, "Failed to update TTL")
+			cli := d.pool.Get()
+			operation := func() error {
+				return cli.Agent().PassTTL("service:"+instanceID, "keepalive")
 			}
+			if err := helper.WithRetry(ctx, operation); err != nil {
+				d.outLog(ServiceDiscoveryLogTypeWarn, "[ConsulDiscovery] Failed to update TTL")
+				if err = d.checkAndReRegisterServices(ctx); err != nil {
+					d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[ConsulDiscovery] The re-registration service failed: %v", err))
+				}
+			}
+			d.pool.Put(cli)
 		case <-ctx.Done():
-			d.outLog(ServiceDiscoveryLogTypeInfo, "Stopping keepalive")
+			d.outLog(ServiceDiscoveryLogTypeInfo, "[ConsulDiscovery] Stopping keepalive")
 			return
 		}
 	}
@@ -249,16 +207,23 @@ func (d *ConsulDiscovery) keepAliveLoop(ctx context.Context, instanceID string) 
 
 // Deregister .
 func (d *ConsulDiscovery) Deregister(ctx context.Context, serviceName, instanceID string) error {
-	err := d.withRetry(func() error {
-		return d.client.Agent().ServiceDeregister(instanceID)
-	})
-	if err != nil {
+	cli := d.pool.Get()
+	defer d.pool.Put(cli)
+
+	operation := func() error {
+		return cli.Agent().ServiceDeregister(instanceID)
+	}
+	if err := helper.WithRetry(ctx, operation); err != nil {
 		return fmt.Errorf("failed to deregister instance: %v", err)
 	}
 
+	d.mutex.Lock()
+	delete(d.registeredServices, instanceID)
+	d.mutex.Unlock()
+
 	d.outLog(
 		ServiceDiscoveryLogTypeInfo,
-		fmt.Sprintf("Deregistered instance, service: %s, instanceId: %s", serviceName, instanceID))
+		fmt.Sprintf("[ConsulDiscovery] Deregistered instance, service: %s, instanceId: %s", serviceName, instanceID))
 
 	return nil
 }
@@ -270,26 +235,37 @@ func (d *ConsulDiscovery) Watch(ctx context.Context, serviceName string) (chan [
 		defer close(ch)
 		lastIndex := uint64(0)
 		for {
+			cli := d.pool.Get()
 			var services []*api.ServiceEntry
 			var meta *api.QueryMeta
-			err := d.withRetry(func() error {
+
+			operation := func() error {
 				var queryErr error
-				services, meta, queryErr = d.client.Health().Service(serviceName, "", true, &api.QueryOptions{WaitIndex: lastIndex})
+				services, meta, queryErr = cli.Health().Service(serviceName, "", true, &api.QueryOptions{WaitIndex: lastIndex})
 				return queryErr
-			})
-			if err != nil {
-				d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("Failed to query services: %v", err))
+			}
+			if err := helper.WithRetry(ctx, operation); err != nil {
+				d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[ConsulDiscovery] Failed to query services: %v", err))
+
+				if err = d.checkAndReRegisterServices(ctx); err != nil {
+					d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[ConsulDiscovery] The re-registration service failed: %v", err))
+				}
+				d.pool.Put(cli)
 				time.Sleep(time.Second)
 				continue
 			}
 
 			lastIndex = meta.LastIndex
 			instances := d.servicesToInstances(services)
+
+			d.pool.Put(cli)
+
 			select {
 			case ch <- instances:
 			case <-ctx.Done():
 				return
 			}
+
 			time.Sleep(time.Second)
 		}
 	}()
@@ -298,15 +274,23 @@ func (d *ConsulDiscovery) Watch(ctx context.Context, serviceName string) (chan [
 
 // GetInstances .
 func (d *ConsulDiscovery) GetInstances(serviceName string) ([]base.ServiceInstance, error) {
+	cli := d.pool.Get()
+	defer d.pool.Put(cli)
+
 	var services []*api.ServiceEntry
-	err := d.withRetry(func() error {
+	operation := func() error {
 		var queryErr error
-		services, _, queryErr = d.client.Health().Service(serviceName, "", true, nil)
+		services, _, queryErr = cli.Health().Service(serviceName, "", true, nil)
 		return queryErr
-	})
-	if err != nil {
+	}
+	if err := helper.WithRetry(context.Background(), operation); err != nil {
+		if err := d.checkAndReRegisterServices(context.Background()); err != nil {
+			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+		}
+
 		return nil, fmt.Errorf("failed to get instances: %v", err)
 	}
+
 	return d.servicesToInstances(services), nil
 }
 
@@ -325,5 +309,6 @@ func (d *ConsulDiscovery) servicesToInstances(services []*api.ServiceEntry) []ba
 
 // Close .
 func (d *ConsulDiscovery) Close() error {
+	d.pool.Close()
 	return nil
 }
