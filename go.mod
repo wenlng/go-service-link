@@ -1,4 +1,4 @@
-module github.com/wenlng/go-service-discovery
+module github.com/wenlng/go-service-link
 
 go 1.23.0
 
@@ -7,7 +7,7 @@ require (
 	github.com/go-zookeeper/zk v1.0.3
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/consul/api v1.29.4
-	github.com/nacos-group/nacos-sdk-go/v2 v2.2.9
+	github.com/nacos-group/nacos-sdk-go/v2 v2.2.8
 	github.com/stretchr/testify v1.9.0
 	go.etcd.io/etcd/client/v3 v3.5.21
 	go.uber.org/zap v1.27.0

@@ -16,10 +16,11 @@ import (
 
 	"github.com/go-zookeeper/zk"
 	"github.com/google/uuid"
-	"github.com/wenlng/go-service-discovery/base"
-	"github.com/wenlng/go-service-discovery/clientpool"
-	"github.com/wenlng/go-service-discovery/extraconfig"
-	"github.com/wenlng/go-service-discovery/helper"
+	"github.com/wenlng/go-service-link/foundation/clientpool"
+	"github.com/wenlng/go-service-link/foundation/common"
+	"github.com/wenlng/go-service-link/foundation/extraconfig"
+	"github.com/wenlng/go-service-link/foundation/helper"
+	"github.com/wenlng/go-service-link/servicediscovery/instance"
 )
 
 // ZooKeeperDiscovery .
@@ -44,7 +45,7 @@ type ZooKeeperDiscoveryConfig struct {
 	keepAlive      time.Duration
 	maxRetries     int
 	baseRetryDelay time.Duration
-	tlsConfig      *base.TLSConfig
+	tlsConfig      *common.TLSConfig
 	username       string
 	password       string
 }
@@ -63,16 +64,32 @@ func NewZooKeeperDiscovery(config ZooKeeperDiscoveryConfig) (*ZooKeeperDiscovery
 		config.baseRetryDelay = 500 * time.Millisecond
 	}
 
-	pool, err := clientpool.NewZooKeeperPool(config.poolSize, config.address, &config.ZooKeeperExtraConfig)
+	config.ZooKeeperExtraConfig.Username = config.username
+	config.ZooKeeperExtraConfig.Password = config.password
+
+	zd := &ZooKeeperDiscovery{
+		config:             config,
+		registeredServices: make(map[string]registeredServiceInfo),
+	}
+
+	zlogger := &extraconfig.Zlogger{
+		OutLogCallback: func(format string, s ...interface{}) {
+			if zd.outputLogCallback != nil {
+				zd.outputLogCallback(OutputLogTypeInfo, fmt.Sprintf(format, s...))
+			}
+		},
+	}
+
+	excfg := &config.ZooKeeperExtraConfig
+	excfg.SetZlogger(zlogger)
+
+	pool, err := clientpool.NewZooKeeperPool(config.poolSize, config.address, excfg)
 	if err != nil {
 		return nil, err
 	}
 
-	return &ZooKeeperDiscovery{
-		config:             config,
-		pool:               pool,
-		registeredServices: make(map[string]registeredServiceInfo),
-	}, nil
+	zd.pool = pool
+	return zd, nil
 }
 
 // SetOutputLogCallback .
@@ -81,7 +98,7 @@ func (d *ZooKeeperDiscovery) SetOutputLogCallback(outputLogCallback OutputLogCal
 }
 
 // outLog
-func (d *ZooKeeperDiscovery) outLog(logType ServiceDiscoveryLogType, message string) {
+func (d *ZooKeeperDiscovery) outLog(logType OutputLogType, message string) {
 	if d.outputLogCallback != nil {
 		d.outputLogCallback(logType, message)
 	}
@@ -107,22 +124,22 @@ func (d *ZooKeeperDiscovery) checkAndReRegisterServices(ctx context.Context) err
 				return fmt.Errorf("failed to check the service registration status: %v", err)
 			}
 			if !exists {
-				d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The service has not been registered. Re-register: %s, instanceID: %s", svcInfo.ServiceName, instanceID))
-				return d.Register(ctx, svcInfo.ServiceName, instanceID, svcInfo.Host, svcInfo.HTTPPort, svcInfo.GRPCPort)
+				d.outLog(OutputLogTypeWarn, fmt.Sprintf("[ZooKeeperDiscovery] The service has not been registered. Re-register: %s, instanceID: %s", svcInfo.ServiceName, instanceID))
+				return d.register(ctx, svcInfo.ServiceName, instanceID, svcInfo.Host, svcInfo.HTTPPort, svcInfo.GRPCPort, true)
 			}
 			return nil
 		}
 
 		if err := helper.WithRetry(ctx, operation); err != nil {
-			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+			d.outLog(OutputLogTypeWarn, fmt.Sprintf("[ZooKeeperDiscovery] The re-registration service failed: %v", err))
 			return err
 		}
 	}
 	return nil
 }
 
-// Register .
-func (d *ZooKeeperDiscovery) Register(ctx context.Context, serviceName, instanceID, host, httpPort, grpcPort string) error {
+// register .
+func (d *ZooKeeperDiscovery) register(ctx context.Context, serviceName, instanceID, host, httpPort, grpcPort string, isReRegister bool) error {
 	cli := d.pool.Get()
 	defer d.pool.Put(cli)
 
@@ -131,7 +148,7 @@ func (d *ZooKeeperDiscovery) Register(ctx context.Context, serviceName, instance
 	}
 	d.instanceID = instanceID
 
-	data, err := json.Marshal(base.ServiceInstance{
+	data, err := json.Marshal(instance.ServiceInstance{
 		InstanceID: instanceID,
 		Host:       host,
 		Metadata: map[string]string{
@@ -146,6 +163,26 @@ func (d *ZooKeeperDiscovery) Register(ctx context.Context, serviceName, instance
 	}
 
 	p := path.Join("/services", serviceName, instanceID)
+
+	if !isReRegister {
+		d.mutex.Lock()
+		d.registeredServices[instanceID] = registeredServiceInfo{
+			ServiceName: serviceName,
+			InstanceID:  instanceID,
+			Host:        host,
+			HTTPPort:    httpPort,
+			GRPCPort:    grpcPort,
+		}
+		d.mutex.Unlock()
+
+		go d.keepAliveLoop(ctx, p, data)
+	}
+
+	d.outLog(
+		OutputLogTypeInfo,
+		fmt.Sprintf("[ZookeeperDiscovery] The registration service is beginning...., service: %s, instanceId: %s, host: %s, http_port: %s, grpc_port: %s",
+			serviceName, instanceID, host, httpPort, grpcPort))
+
 	err = d.ensureParentNodes(p)
 	if err != nil {
 		return err
@@ -162,24 +199,17 @@ func (d *ZooKeeperDiscovery) Register(ctx context.Context, serviceName, instance
 		return err
 	}
 
-	go d.keepAliveLoop(ctx, p, data)
-
-	d.mutex.Lock()
-	d.registeredServices[instanceID] = registeredServiceInfo{
-		ServiceName: serviceName,
-		InstanceID:  instanceID,
-		Host:        host,
-		HTTPPort:    httpPort,
-		GRPCPort:    grpcPort,
-	}
-	d.mutex.Unlock()
-
 	d.outLog(
-		ServiceDiscoveryLogTypeInfo,
+		OutputLogTypeInfo,
 		fmt.Sprintf("[ZooKeeperDiscovery] Registered instance, service: %s, instanceId: %s, host: %s, http_port: %s, grpc_port: %s",
 			serviceName, instanceID, host, httpPort, grpcPort))
 
 	return nil
+}
+
+// Register .
+func (d *ZooKeeperDiscovery) Register(ctx context.Context, serviceName, instanceID, host, httpPort, grpcPort string) error {
+	return d.register(ctx, serviceName, instanceID, host, httpPort, grpcPort, false)
 }
 
 // ensureParentNodes recursively create the parent node
@@ -239,9 +269,9 @@ func (d *ZooKeeperDiscovery) keepAliveLoop(ctx context.Context, path string, dat
 				return checkErr
 			}
 			if err := helper.WithRetry(context.Background(), operation); err != nil {
-				d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[ZooKeeperDiscovery] Failed to check instance: %v", err))
+				d.outLog(OutputLogTypeWarn, fmt.Sprintf("[ZooKeeperDiscovery] Failed to check instance: %v", err))
 				if err := d.checkAndReRegisterServices(ctx); err != nil {
-					d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+					d.outLog(OutputLogTypeWarn, fmt.Sprintf("[ZooKeeperDiscovery] The re-registration service failed: %v", err))
 				}
 				d.pool.Put(cli)
 				continue
@@ -256,12 +286,12 @@ func (d *ZooKeeperDiscovery) keepAliveLoop(ctx context.Context, path string, dat
 					return nil
 				}
 				if err := helper.WithRetry(context.Background(), operation); err != nil {
-					d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[ZooKeeperDiscovery] Failed to check instance: %v", err))
+					d.outLog(OutputLogTypeWarn, fmt.Sprintf("[ZooKeeperDiscovery] Failed to check instance: %v", err))
 				}
 			}
 			d.pool.Put(cli)
 		case <-ctx.Done():
-			d.outLog(ServiceDiscoveryLogTypeInfo, "Stopping keepalive")
+			d.outLog(OutputLogTypeInfo, "Stopping keepalive")
 			return
 		}
 	}
@@ -289,22 +319,22 @@ func (d *ZooKeeperDiscovery) Deregister(ctx context.Context, serviceName, instan
 	d.mutex.Unlock()
 
 	d.outLog(
-		ServiceDiscoveryLogTypeInfo,
+		OutputLogTypeInfo,
 		fmt.Sprintf("[ZooKeeperDiscovery] Deregistered instance, service: %s, instanceId: %s", serviceName, instanceID))
 
 	return nil
 }
 
 // Watch .
-func (d *ZooKeeperDiscovery) Watch(ctx context.Context, serviceName string) (chan []base.ServiceInstance, error) {
+func (d *ZooKeeperDiscovery) Watch(ctx context.Context, serviceName string) (chan []instance.ServiceInstance, error) {
 	prefix := path.Join("/services", serviceName)
-	ch := make(chan []base.ServiceInstance, 1)
+	ch := make(chan []instance.ServiceInstance, 1)
 	go func() {
 		defer close(ch)
 		for {
 			instances, err := d.GetInstances(serviceName)
 			if err != nil {
-				d.outLog(ServiceDiscoveryLogTypeError, fmt.Sprintf("[ZooKeeperDiscovery] Failed to get instances: %v", err))
+				d.outLog(OutputLogTypeError, fmt.Sprintf("[ZooKeeperDiscovery] Failed to get instances: %v", err))
 				time.Sleep(time.Second)
 				continue
 			}
@@ -317,7 +347,7 @@ func (d *ZooKeeperDiscovery) Watch(ctx context.Context, serviceName string) (cha
 			_, _, wch, err := cli.ChildrenW(prefix)
 			d.pool.Put(cli)
 			if err != nil {
-				d.outLog(ServiceDiscoveryLogTypeError, fmt.Sprintf("[ZooKeeperDiscovery] Failed to watch children: %v", err))
+				d.outLog(OutputLogTypeError, fmt.Sprintf("[ZooKeeperDiscovery] Failed to watch children: %v", err))
 				time.Sleep(time.Second)
 				continue
 			}
@@ -332,7 +362,7 @@ func (d *ZooKeeperDiscovery) Watch(ctx context.Context, serviceName string) (cha
 }
 
 // GetInstances .
-func (d *ZooKeeperDiscovery) GetInstances(serviceName string) ([]base.ServiceInstance, error) {
+func (d *ZooKeeperDiscovery) GetInstances(serviceName string) ([]instance.ServiceInstance, error) {
 	cli := d.pool.Get()
 	defer d.pool.Put(cli)
 
@@ -348,22 +378,34 @@ func (d *ZooKeeperDiscovery) GetInstances(serviceName string) ([]base.ServiceIns
 		return nil, fmt.Errorf("failed to get instances: %v", err)
 	}
 
-	var instances []base.ServiceInstance
+	var instances []instance.ServiceInstance
 	for _, child := range children {
 		data, _, err := cli.Get(path.Join(prefix, child))
 		if err != nil {
 			if err = d.checkAndReRegisterServices(context.Background()); err != nil {
-				d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+				d.outLog(OutputLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
 			}
 
-			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[ZooKeeperDiscovery] Failed to get instance data: %v", err))
+			d.outLog(OutputLogTypeWarn, fmt.Sprintf("[ZooKeeperDiscovery] Failed to get instance data: %v", err))
 			continue
 		}
-		var inst base.ServiceInstance
+		var inst instance.ServiceInstance
 		if err = json.Unmarshal(data, &inst); err != nil {
-			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[ZooKeeperDiscovery] Failed to unmarshal instance: %v", err))
+			d.outLog(OutputLogTypeWarn, fmt.Sprintf("[ZooKeeperDiscovery] Failed to unmarshal instance: %v", err))
 			continue
 		}
+
+		httpPort := ""
+		grpcPort := ""
+		if port, ok := inst.Metadata["http_port"]; ok {
+			httpPort = port
+		}
+		if port, ok := inst.Metadata["grpc_port"]; ok {
+			httpPort = port
+		}
+
+		inst.HTTPPort = httpPort
+		inst.GRPCPort = grpcPort
 		instances = append(instances, inst)
 	}
 	return instances, nil

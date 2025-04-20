@@ -341,6 +341,10 @@ github.com/modern-go/reflect2 v1.0.2 h1:xBagoLtFs94CBntxluKeaWgTMpvLxC4ur3nMaC9G
 github.com/modern-go/reflect2 v1.0.2/go.mod h1:yWuevngMOJpCy52FWWMvUC8ws7m/LJsjYzDa0/r8luk=
 github.com/mwitkow/go-conntrack v0.0.0-20161129095857-cc309e4a2223/go.mod h1:qRWi+5nqEBWmkhHvq77mSJWrCKwh8bxhgT7d/eI7P4U=
 github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f/go.mod h1:qRWi+5nqEBWmkhHvq77mSJWrCKwh8bxhgT7d/eI7P4U=
+github.com/nacos-group/nacos-sdk-go/v2 v2.2.5 h1:r0wwT7PayEjvEHzWXwr1ROi/JSqzujM4w+1L5ikThzQ=
+github.com/nacos-group/nacos-sdk-go/v2 v2.2.5/go.mod h1:OObBon0prVJVPoIbSZxpEkFiBfL0d1LcBtuAMiNn+8c=
+github.com/nacos-group/nacos-sdk-go/v2 v2.2.8 h1:lyt2ynw2+G4JywFUAM0qXCJ/nEA9ORsweiLkgwYISUo=
+github.com/nacos-group/nacos-sdk-go/v2 v2.2.8/go.mod h1:pIv1y5pMAjqFNU4jo9fmbuBjiZqpeGCddKkv0Y12ysY=
 github.com/nacos-group/nacos-sdk-go/v2 v2.2.9 h1:etzCMnB9EBeSKfaDIOe8zH4HO/8fycpc6s0AmXCrmAw=
 github.com/nacos-group/nacos-sdk-go/v2 v2.2.9/go.mod h1:9FKXl6FqOiVmm72i8kADtbeK71egyG9y3uRDBg41tpQ=
 github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e/go.mod h1:zD1mROLANZcx1PVRCS0qkT7pwLkGfwJo4zjcN/Tysno=

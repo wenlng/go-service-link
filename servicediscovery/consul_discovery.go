@@ -15,10 +15,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hashicorp/consul/api"
-	"github.com/wenlng/go-service-discovery/base"
-	"github.com/wenlng/go-service-discovery/clientpool"
-	"github.com/wenlng/go-service-discovery/extraconfig"
-	"github.com/wenlng/go-service-discovery/helper"
+	"github.com/wenlng/go-service-link/foundation/clientpool"
+	"github.com/wenlng/go-service-link/foundation/common"
+	"github.com/wenlng/go-service-link/foundation/extraconfig"
+	"github.com/wenlng/go-service-link/foundation/helper"
+	"github.com/wenlng/go-service-link/servicediscovery/instance"
 )
 
 // ConsulDiscovery .
@@ -41,7 +42,7 @@ type ConsulDiscoveryConfig struct {
 	keepAlive      time.Duration
 	maxRetries     int
 	baseRetryDelay time.Duration
-	tlsConfig      *base.TLSConfig
+	tlsConfig      *common.TLSConfig
 	username       string
 	password       string
 }
@@ -59,6 +60,9 @@ func NewConsulDiscovery(config ConsulDiscoveryConfig) (*ConsulDiscovery, error) 
 	if !helper.IsDurationSet(config.baseRetryDelay) {
 		config.baseRetryDelay = 500 * time.Millisecond
 	}
+
+	config.ConsulExtraConfig.Username = config.username
+	config.ConsulExtraConfig.Password = config.password
 
 	pool, err := clientpool.NewConsulPool(config.poolSize, config.address, &config.ConsulExtraConfig)
 	if err != nil {
@@ -78,14 +82,14 @@ func (d *ConsulDiscovery) SetOutputLogCallback(outputLogCallback OutputLogCallba
 }
 
 // outLog
-func (d *ConsulDiscovery) outLog(logType ServiceDiscoveryLogType, message string) {
+func (d *ConsulDiscovery) outLog(logType OutputLogType, message string) {
 	if d.outputLogCallback != nil {
 		d.outputLogCallback(logType, message)
 	}
 }
 
-// Register .
-func (d *ConsulDiscovery) Register(ctx context.Context, serviceName, instanceID, host, httpPort, grpcPort string) error {
+// register ..
+func (d *ConsulDiscovery) register(ctx context.Context, serviceName, instanceID, host, httpPort, grpcPort string, isReRegister bool) error {
 	cli := d.pool.Get()
 	defer d.pool.Put(cli)
 
@@ -111,6 +115,24 @@ func (d *ConsulDiscovery) Register(ctx context.Context, serviceName, instanceID,
 		},
 	}
 
+	d.outLog(
+		OutputLogTypeInfo,
+		fmt.Sprintf("[ConsulDiscovery] The registration service is beginning...., service: %s, instanceId: %s, host: %s, http_port: %s, grpc_port: %s",
+			serviceName, instanceID, host, httpPort, grpcPort))
+
+	if !isReRegister {
+		d.mutex.Lock()
+		d.registeredServices[instanceID] = registeredServiceInfo{
+			ServiceName: serviceName,
+			InstanceID:  instanceID,
+			Host:        host,
+			HTTPPort:    httpPort,
+			GRPCPort:    grpcPort,
+		}
+		d.mutex.Unlock()
+		go d.keepAliveLoop(ctx, instanceID)
+	}
+
 	operation := func() error {
 		return cli.Agent().ServiceRegister(registration)
 	}
@@ -118,23 +140,16 @@ func (d *ConsulDiscovery) Register(ctx context.Context, serviceName, instanceID,
 		return fmt.Errorf("failed to register instance: %v", err)
 	}
 
-	d.mutex.Lock()
-	d.registeredServices[instanceID] = registeredServiceInfo{
-		ServiceName: serviceName,
-		InstanceID:  instanceID,
-		Host:        host,
-		HTTPPort:    httpPort,
-		GRPCPort:    grpcPort,
-	}
-	d.mutex.Unlock()
-
-	go d.keepAliveLoop(ctx, instanceID)
-
 	d.outLog(
-		ServiceDiscoveryLogTypeInfo,
+		OutputLogTypeInfo,
 		fmt.Sprintf("[ConsulDiscovery] Registered instance, service: %s, instanceId: %s, host: %s, http_port: %s, grpc_port: %s",
 			serviceName, instanceID, host, httpPort, grpcPort))
 	return nil
+}
+
+// Register .
+func (d *ConsulDiscovery) Register(ctx context.Context, serviceName, instanceID, host, httpPort, grpcPort string) error {
+	return d.register(ctx, serviceName, instanceID, host, httpPort, grpcPort, false)
 }
 
 // checkAndReRegisterServices Check and re-register the service
@@ -165,14 +180,14 @@ func (d *ConsulDiscovery) checkAndReRegisterServices(ctx context.Context) error 
 			}
 
 			if !registered {
-				d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[ConsulDiscovery] The service has not been registered. Re-register: %s, instanceID: %s", svcInfo.ServiceName, instanceID))
-				return d.Register(ctx, svcInfo.ServiceName, instanceID, svcInfo.Host, svcInfo.HTTPPort, svcInfo.GRPCPort)
+				d.outLog(OutputLogTypeWarn, fmt.Sprintf("[ConsulDiscovery] The service has not been registered. Re-register: %s, instanceID: %s", svcInfo.ServiceName, instanceID))
+				return d.register(ctx, svcInfo.ServiceName, instanceID, svcInfo.Host, svcInfo.HTTPPort, svcInfo.GRPCPort, true)
 			}
 			return nil
 		}
 
 		if err := helper.WithRetry(ctx, operation); err != nil {
-			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[ConsulDiscovery] The re-registration service failed: %v", err))
+			d.outLog(OutputLogTypeWarn, fmt.Sprintf("[ConsulDiscovery] The re-registration service failed: %v", err))
 			return err
 		}
 	}
@@ -192,14 +207,14 @@ func (d *ConsulDiscovery) keepAliveLoop(ctx context.Context, instanceID string) 
 				return cli.Agent().PassTTL("service:"+instanceID, "keepalive")
 			}
 			if err := helper.WithRetry(ctx, operation); err != nil {
-				d.outLog(ServiceDiscoveryLogTypeWarn, "[ConsulDiscovery] Failed to update TTL")
+				d.outLog(OutputLogTypeWarn, "[ConsulDiscovery] Failed to update TTL")
 				if err = d.checkAndReRegisterServices(ctx); err != nil {
-					d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[ConsulDiscovery] The re-registration service failed: %v", err))
+					d.outLog(OutputLogTypeWarn, fmt.Sprintf("[ConsulDiscovery] The re-registration service failed: %v", err))
 				}
 			}
 			d.pool.Put(cli)
 		case <-ctx.Done():
-			d.outLog(ServiceDiscoveryLogTypeInfo, "[ConsulDiscovery] Stopping keepalive")
+			d.outLog(OutputLogTypeInfo, "[ConsulDiscovery] Stopping keepalive")
 			return
 		}
 	}
@@ -222,15 +237,15 @@ func (d *ConsulDiscovery) Deregister(ctx context.Context, serviceName, instanceI
 	d.mutex.Unlock()
 
 	d.outLog(
-		ServiceDiscoveryLogTypeInfo,
+		OutputLogTypeInfo,
 		fmt.Sprintf("[ConsulDiscovery] Deregistered instance, service: %s, instanceId: %s", serviceName, instanceID))
 
 	return nil
 }
 
 // Watch .
-func (d *ConsulDiscovery) Watch(ctx context.Context, serviceName string) (chan []base.ServiceInstance, error) {
-	ch := make(chan []base.ServiceInstance, 1)
+func (d *ConsulDiscovery) Watch(ctx context.Context, serviceName string) (chan []instance.ServiceInstance, error) {
+	ch := make(chan []instance.ServiceInstance, 1)
 	go func() {
 		defer close(ch)
 		lastIndex := uint64(0)
@@ -245,10 +260,10 @@ func (d *ConsulDiscovery) Watch(ctx context.Context, serviceName string) (chan [
 				return queryErr
 			}
 			if err := helper.WithRetry(ctx, operation); err != nil {
-				d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[ConsulDiscovery] Failed to query services: %v", err))
+				d.outLog(OutputLogTypeWarn, fmt.Sprintf("[ConsulDiscovery] Failed to query services: %v", err))
 
 				if err = d.checkAndReRegisterServices(ctx); err != nil {
-					d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[ConsulDiscovery] The re-registration service failed: %v", err))
+					d.outLog(OutputLogTypeWarn, fmt.Sprintf("[ConsulDiscovery] The re-registration service failed: %v", err))
 				}
 				d.pool.Put(cli)
 				time.Sleep(time.Second)
@@ -273,7 +288,7 @@ func (d *ConsulDiscovery) Watch(ctx context.Context, serviceName string) (chan [
 }
 
 // GetInstances .
-func (d *ConsulDiscovery) GetInstances(serviceName string) ([]base.ServiceInstance, error) {
+func (d *ConsulDiscovery) GetInstances(serviceName string) ([]instance.ServiceInstance, error) {
 	cli := d.pool.Get()
 	defer d.pool.Put(cli)
 
@@ -285,7 +300,7 @@ func (d *ConsulDiscovery) GetInstances(serviceName string) ([]base.ServiceInstan
 	}
 	if err := helper.WithRetry(context.Background(), operation); err != nil {
 		if err := d.checkAndReRegisterServices(context.Background()); err != nil {
-			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+			d.outLog(OutputLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
 		}
 
 		return nil, fmt.Errorf("failed to get instances: %v", err)
@@ -295,13 +310,24 @@ func (d *ConsulDiscovery) GetInstances(serviceName string) ([]base.ServiceInstan
 }
 
 // servicesToInstances .
-func (d *ConsulDiscovery) servicesToInstances(services []*api.ServiceEntry) []base.ServiceInstance {
-	var instances []base.ServiceInstance
+func (d *ConsulDiscovery) servicesToInstances(services []*api.ServiceEntry) []instance.ServiceInstance {
+	var instances []instance.ServiceInstance
 	for _, svc := range services {
-		instances = append(instances, base.ServiceInstance{
+		httpPort := ""
+		grpcPort := ""
+		if port, ok := svc.Service.Meta["http_port"]; ok {
+			httpPort = port
+		}
+		if port, ok := svc.Service.Meta["grpc_port"]; ok {
+			httpPort = port
+		}
+
+		instances = append(instances, instance.ServiceInstance{
 			InstanceID: svc.Service.ID,
 			Host:       svc.Service.Address,
 			Metadata:   svc.Service.Meta,
+			HTTPPort:   httpPort,
+			GRPCPort:   grpcPort,
 		})
 	}
 	return instances

@@ -9,7 +9,7 @@ package servicediscovery
 import (
 	"context"
 
-	"github.com/wenlng/go-service-discovery/base"
+	"github.com/wenlng/go-service-link/servicediscovery/instance"
 )
 
 type NoopDiscovery struct{}
@@ -29,15 +29,15 @@ func (n *NoopDiscovery) Deregister(ctx context.Context, serviceName, instanceID 
 }
 
 // Watch .
-func (n *NoopDiscovery) Watch(ctx context.Context, serviceName string) (chan []base.ServiceInstance, error) {
-	ch := make(chan []base.ServiceInstance)
+func (n *NoopDiscovery) Watch(ctx context.Context, serviceName string) (chan []instance.ServiceInstance, error) {
+	ch := make(chan []instance.ServiceInstance)
 	close(ch)
 	return ch, nil
 }
 
 // GetInstances .
-func (n *NoopDiscovery) GetInstances(serviceName string) ([]base.ServiceInstance, error) {
-	return []base.ServiceInstance{}, nil
+func (n *NoopDiscovery) GetInstances(serviceName string) ([]instance.ServiceInstance, error) {
+	return []instance.ServiceInstance{}, nil
 }
 
 // Close .

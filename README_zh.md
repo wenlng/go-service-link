@@ -1,246 +1,314 @@
 <div align="center">
-<h1 style="margin: 0; padding: 0">GoServiceDiscovery</h1>
-<p style="margin: 0; padding: 0">用于 Golang 的服务发现 + 动态配置管理器 </p>
+<h1 style="margin: 0; padding: 0">GoServiceLink</h1>
+<p style="margin: 0; padding: 0">用于 Golang 的服务发现和服务动态配置管理 </p>
 <br/>
-<a href="https://goreportcard.com/report/github.com/wenlng/go-service-discovery"><img src="https://goreportcard.com/badge/github.com/wenlng/go-service-discovery"/></a>
-<a href="https://godoc.org/github.com/wenlng/go-service-discovery"><img src="https://godoc.org/github.com/wenlng/go-service-discovery?status.svg"/></a>
-<a href="https://github.com/wenlng/go-service-discovery/releases"><img src="https://img.shields.io/github/v/release/wenlng/go-service-discovery.svg"/></a>
-<a href="https://github.com/wenlng/go-service-discovery/blob/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg"/></a>
-<a href="https://github.com/wenlng/go-service-discovery"><img src="https://img.shields.io/github/stars/wenlng/go-service-discovery.svg"/></a>
-<a href="https://github.com/wenlng/go-service-discovery"><img src="https://img.shields.io/github/last-commit/wenlng/go-service-discovery.svg"/></a>
+<a href="https://goreportcard.com/report/github.com/wenlng/go-service-link"><img src="https://goreportcard.com/badge/github.com/wenlng/go-service-link"/></a>
+<a href="https://godoc.org/github.com/wenlng/go-service-link"><img src="https://godoc.org/github.com/wenlng/go-service-link?status.svg"/></a>
+<a href="https://github.com/wenlng/go-service-link/releases"><img src="https://img.shields.io/github/v/release/wenlng/go-service-link.svg"/></a>
+<a href="https://github.com/wenlng/go-service-link/blob/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg"/></a>
+<a href="https://github.com/wenlng/go-service-link"><img src="https://img.shields.io/github/stars/wenlng/go-service-link.svg"/></a>
+<a href="https://github.com/wenlng/go-service-link"><img src="https://img.shields.io/github/last-commit/wenlng/go-service-link.svg"/></a>
 </div>
 
 <br/>
 
-`ServiceDiscovery` 是服务发现管理器，多种中间件可适配支持的合集，适用于微服务架构，支持服务注册、服务发现和负载均衡功能，同时具备连接池、健康检查和指数退避重试等强大功能。
-<br/>
+`GoServiceLink` 是服务发现和动态配置的管理器，提供多种中间件可适配的合集，适用于微服务架构，支持服务注册与发现、负载均衡、动态配置同步、实时监控和热加载等功能，同时具备连接池、健康检查和指数退避重试等强大功能。
 
-`DynamiConfig` 是动态配置管理器，旨在跨多个配置中心动态管理配置，提供统一的接口，支持配置同步、实时监控和热加载，同时具备连接池、分布式锁、健康检查和指数退避重试等强大功能。
-<br/>
 <br/>
 
 > [English](README.md) | 中文
 <p> ⭐️ 如果能帮助到你，请随手给点一个star</p>
 
-## ServiceDiscovery 功能特性
-* 服务注册：服务启动时自动向服务中间件注册服务信息，支持租约机制确保服务状态更新。
-* 服务发现：客户端从服务中间件动态获取服务列表，支持实时监听服务变化。
-* 负载均衡：提供轮询多种负载均衡策略（Random、Round-Robin、Consistent-Hash）。
-* 示例代码：包含服务端/客户端示例，展示服务发现的实际应用。
-* 模块化设计：代码结构清晰，易于扩展和集成。
-* 支持中间件：Etcd、Consul、ZooKeeper、Nacos。
-
-
-## DynamicConfig 特性
-
-- **动态配置管理**：
-    - 同步本地和远程配置。
-    - 实时监控配置变化并触发热加载。
-    - 验证配置有效性，确保数据正确性。
+## 功能特性
+- **服务注册**：服务启动时自动向服务中间件注册服务信息，支持租约机制确保服务状态更新。
+- **服务发现**：客户端从服务中间件动态获取服务列表，支持实时监听服务变化。
+- **负载均衡**：提供轮询多种负载均衡策略（Random、Round-Robin、Consistent-Hash）。
+- **支持中间件**：Etcd、Consul、ZooKeeper、Nacos。
+- **动态配置管理**： 同步本地和远程配置、实时监控配置变化并触发热加载。
 - **连接池**：为每个配置中心维护客户端连接池，提升性能和资源利用率。
 - **分布式锁**：使用分布式锁（例如 Etcd mutex、Consul 锁、ZooKeeper 锁）确保配置更新的安全性。
 - **健康检查**：定期检查配置中心的健康状态，提供延迟、领导者状态和集群规模等指标。
-- **重连和重试**：
-    - 自动重连断开的配置中心。
-    - 使用指数退避策略重试失败的操作。
+- **重连和重试**： 自动重连断开的配置中心、使用指数退避策略重试失败的操作。
 - **优雅关闭**：在应用终止时正确清理资源（连接、监听器）。
+- **示例代码**：包含服务端/客户端示例，展示服务发现的实际应用。
+- **模块化设计**：代码结构清晰（servicediscovery、dynaconfig），易于扩展和集成。
 
 <br/>
-<hr/>
-<br/>
 
-## Service 端
+## 服务发现 - Service 端
 下面是一个服务器端服务注册代码的例子：
 ```go
 var discovery servicediscovery.ServiceDiscovery
 
 // setupDiscovery .
 func setupDiscovery(serviceName, httPort, grpcPort string) error {
-    var err error
-    discovery, err = servicediscovery.NewServiceDiscovery(servicediscovery.Config{
-        Type:        servicediscovery.ServiceDiscoveryTypeEtcd,
-        Addrs:       "localhost:2379",
-        
-        //Type:        servicediscovery.ServiceDiscoveryTypeZookeeper,
-        //Addrs:       "localhost:2181",
-        
-        //Type:        servicediscovery.ServiceDiscoveryTypeNacos,
-        //Addrs:       "localhost:8848",
-        //Username: "nocos",
-        //Password: "nocos",
-        
-        //Type:        servicediscovery.ServiceDiscoveryTypeConsul,
-        //Addrs:       "localhost:8500",
-        
-        TTL:         10 * time.Second,
-        KeepAlive:   3 * time.Second,
-        ServiceName: serviceName,
-    })
-    if err != nil {
-        return err
-    }
-    
-    discovery.SetOutputLogCallback(func(logType servicediscovery.ServiceDiscoveryLogType, message string) {
-        if logType == servicediscovery.ServiceDiscoveryLogTypeInfo {
-            fmt.Fprintf(os.Stdout, "[Service Discovery Log]: %v\n", message)
-        } else {
-            fmt.Fprintf(os.Stderr, "[Service Discovery Log]: %v\n", message)
-        }
-    })
-    
-    return nil
+	var err error
+	discovery, err = servicediscovery.NewServiceDiscovery(servicediscovery.Config{
+		Type:  servicediscovery.ServiceDiscoveryTypeEtcd,
+		Addrs: "localhost:2379",
+
+		//Type:        servicediscovery.ServiceDiscoveryTypeZookeeper,
+		//Addrs:       "localhost:2181",
+
+		//Type:        servicediscovery.ServiceDiscoveryTypeNacos,
+		//Addrs:       "localhost:8848",
+		//Username: "nacos",
+		//Password: "nacos",
+
+		//Type:  servicediscovery.ServiceDiscoveryTypeConsul,
+		//Addrs: "localhost:8500",
+
+		TTL:         10 * time.Second,
+		KeepAlive:   3 * time.Second,
+		ServiceName: serviceName,
+	})
+	if err != nil {
+		return err
+	}
+
+	discovery.SetOutputLogCallback(func(logType servicediscovery.ServiceDiscoveryLogType, message string) {
+		if logType == servicediscovery.ServiceDiscoveryLogTypeInfo {
+			fmt.Fprintf(os.Stdout, "[Service Discovery Log]: %v\n", message)
+		} else {
+			fmt.Fprintf(os.Stderr, "[Service Discovery Log]: %v\n", message)
+		}
+	})
+
+	return nil
 }
 
 func main() {
-    serviceName := "hello-app"
-    host := "localhost"
-    httpPort := "8084"
-    grpcPort := ""
-    
-    err := setupDiscovery(serviceName, httpPort, grpcPort)
-    if err != nil {
-        fmt.Fprintf(os.Stderr, "Failed to initialize service discovery: %v\n", err)
-        return
-    }
-	
-    ctx, cancel := context.WithCancel(context.Background())
-    defer cancel()
-    
-    // Register service
-    instanceID := uuid.New().String()
-    if err = discovery.Register(ctx, serviceName, instanceID, host, httpPort, grpcPort); err != nil {
-        fmt.Fprintf(os.Stderr, "Failed to register service: %v\n", err)
-    }
-    
-    // Watch service
-    go watchInstances(ctx, discovery, serviceName, instanceID)
-    
-    // Close
-    defer func() {
-        if err = discovery.Close(); err != nil {
-            fmt.Fprintf(os.Stderr, "Service discovery close error: %v\n", err)
-        } else {
-            fmt.Fprintf(os.Stdout, "Service discovery closed successfully\n")
-        }
-    }()
+	httpPort := flag.String("http-port", "8001", "Port for HTTP server")
+	grpcPort := flag.String("grpc-port", "9001", "Port for gRPC server")
+	flag.Parse()
+
+	serviceName := "hello-app"
+	host := "localhost"
+
+	err := setupDiscovery(serviceName, *httpPort, *grpcPort)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize service discovery: %v\n", err)
+		return
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Register service
+	instanceID := uuid.New().String()
+	if err = discovery.Register(ctx, serviceName, instanceID, host, *httpPort, *grpcPort); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to register service: %v\n", err)
+	}
+
+	// Watch service
+	go watchInstances(ctx, discovery, serviceName, instanceID)
+
+	// Close
+	defer func() {
+		if err = discovery.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "Service discovery close error: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stdout, "Service discovery closed successfully\n")
+		}
+	}()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	fmt.Println("Press Ctrl+C to exit...")
+	<-sigCh
+
+	fmt.Println("\nReceived shutdown signal. Exiting...")
+	os.Exit(0)
 }
 
-
-// watchInstances 监听服务实例
+// watchInstances watch service instances
 func watchInstances(ctx context.Context, discovery servicediscovery.ServiceDiscovery, serviceName, instanceID string) {
-    if discovery == nil {
-        return
-    }
-    
-    ch, err := discovery.Watch(ctx, serviceName)
-    if err != nil {
-        fmt.Fprintf(os.Stderr, "Failed to discovery watch: %v\n", err)
-    }
-    
-    for {
-        select {
-        case <-ctx.Done():
-            if discovery != nil {
-                if err = discovery.Deregister(ctx, serviceName, instanceID); err != nil {
-                    fmt.Fprintf(os.Stderr, "Failed to deregister service: %v\n", err)
-                }
-            }
-            return
-        case instances, ok := <-ch:
-            if !ok {
-                return
-            }
-            fmt.Fprintf(os.Stdout, "Discovered instances: %d \n", len(instances))
-        }
-    }
+	if discovery == nil {
+		return
+	}
+
+	ch, err := discovery.Watch(ctx, serviceName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to discovery watch: %v\n", err)
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			if discovery != nil {
+				if err = discovery.Deregister(ctx, serviceName, instanceID); err != nil {
+					fmt.Fprintf(os.Stderr, "Failed to deregister service: %v\n", err)
+				}
+			}
+			return
+		case instances, ok := <-ch:
+			if !ok {
+				return
+			}
+			instancesStr, _ := json.Marshal(instances)
+			fmt.Fprintf(os.Stdout, "Discovered instances: %d, list: %v \n", len(instances), string(instancesStr))
+		}
+	}
 }
 
 ```
 
-## Client 端
+```
+
+## 服务发现 - Client 端
 下面是客户端服务发现和负载平衡代码的示例：
 ```go
 var discovery *servicediscovery.DiscoveryWithLB
 
 // setupDiscovery .
 func setupDiscovery(serviceName string) error {
-    var err error
-    discovery, err = servicediscovery.NewDiscoveryWithLB(servicediscovery.Config{
-        Type:        servicediscovery.ServiceDiscoveryTypeEtcd,
-        Addrs:       "localhost:2379",
-        
-        //Type:        servicediscovery.ServiceDiscoveryTypeZookeeper,
-        //Addrs:       "localhost:2181",
-        
-        //Type:        servicediscovery.ServiceDiscoveryTypeNacos,
-        //Addrs:       "localhost:8848",
-        //Username: "nocos",
-        //Password: "nocos",
-        
-        //Type:        servicediscovery.ServiceDiscoveryTypeConsul,
-        //Addrs:       "localhost:8500",
-        
-        TTL:         10 * time.Second,
-        KeepAlive:   3 * time.Second,
-        ServiceName: serviceName,
-    }, loadbalancer.LoadBalancerTypeConsistentHash)
-    if err != nil {
-        return err
-    }
+	var err error
+	discovery, err = servicediscovery.NewDiscoveryWithLB(servicediscovery.Config{
+		Type:  servicediscovery.ServiceDiscoveryTypeEtcd,
+		Addrs: "localhost:2379",
 
-    discovery.SetOutputLogCallback(func(logType servicediscovery.ServiceDiscoveryLogType, message string) {
-        if logType == servicediscovery.ServiceDiscoveryLogTypeInfo {
-            fmt.Fprintf(os.Stdout, "[Service Discovery Log]: %v\n", message)
-        } else {
-            fmt.Fprintf(os.Stderr, "[Service Discovery Log]: %v\n", message)
-        }
-    })
+		//Type:        servicediscovery.ServiceDiscoveryTypeZookeeper,
+		//Addrs:       "localhost:2181",
 
-    return nil
+		//Type:        servicediscovery.ServiceDiscoveryTypeNacos,
+		//Addrs:       "localhost:8848",
+		//Username: "nocos",
+		//Password: "nocos",
+
+		//Type:  servicediscovery.ServiceDiscoveryTypeConsul,
+		//Addrs: "localhost:8500",
+
+		TTL:         10 * time.Second,
+		KeepAlive:   3 * time.Second,
+		ServiceName: serviceName,
+	}, balancer.LoadBalancerTypeRoundRobin)
+	if err != nil {
+		return err
+	}
+
+	discovery.SetOutputLogCallback(func(logType servicediscovery.ServiceDiscoveryLogType, message string) {
+		if logType == servicediscovery.ServiceDiscoveryLogTypeInfo {
+			fmt.Fprintf(os.Stdout, "[Service Discovery Log]: %v\n", message)
+		} else {
+			fmt.Fprintf(os.Stderr, "[Service Discovery Log]: %v\n", message)
+		}
+	})
+
+	return nil
+}
+
+// watchInstances periodically updates service instances
+func watchInstances(ctx context.Context, discovery servicediscovery.ServiceDiscovery, serviceName string) {
+	if discovery == nil {
+		return
+	}
+
+	ch, err := discovery.Watch(ctx, serviceName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to discovery watch: %v\n", err)
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case instances, ok := <-ch:
+			if !ok {
+				return
+			}
+			instancesStr, _ := json.Marshal(instances)
+			fmt.Fprintf(os.Stdout, "Discovered instances: %d, list: %v \n", len(instances), string(instancesStr))
+		}
+	}
+}
+
+func selectUrl(serviceName string) string {
+	inst, err := discovery.Select(serviceName, helper.GetHostname())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to select instance: %v\n", err)
+		return ""
+	}
+	httpPort, ok := inst.Metadata["http_port"]
+	if !ok {
+		fmt.Fprintf(os.Stderr, "http_port not found in instance metadata\n")
+		return ""
+	}
+	return fmt.Sprintf("http://%s:%s/hello", inst.Host, httpPort)
+}
+
+func callRequests(serviceName string, numWorkers, requestsPerWorker int) {
+	wg := sync.WaitGroup{}
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for j := 0; j < requestsPerWorker; j++ {
+				url := selectUrl(serviceName)
+				fmt.Fprintf(os.Stdout, "worker: %d, request: %d selectUrl: %v\n", workerID, j, url)
+				time.Sleep(10 * time.Millisecond)
+			}
+		}(i)
+	}
+
+	wg.Wait()
 }
 
 func main() {
-    serviceName := "hello-app"
-    
-    err := setupDiscovery(serviceName)
-    if err != nil {
-        fmt.Fprintf(os.Stderr, "Failed to initialize service discovery: %v\n", err)
-        return
-    }
-    
-    // LB select
-    inst, err := discovery.Select(serviceName, helper.GetHostname())
-    if err != nil {
-        fmt.Fprintf(os.Stderr, "failed to select instance: %v\n", err)
-        return
-    }
-	
-    httpPort, ok := inst.Metadata["http_port"]
-    if !ok {
-        fmt.Fprintf(os.Stderr, "http_port not found in instance metadata\n")
-        return
-    }
-    url := fmt.Sprintf("http://%s:%s/hello", inst.Host, httpPort)
-    fmt.Println(url)
-    
-    // Close
-    defer func() {
-        if err = discovery.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "Service discovery close error: %v\n", err)
-        } else {
-            fmt.Fprintf(os.Stdout, "Service discovery closed successfully\n")
-        }
-    }()
-}
+	numWorkers := flag.Int("worker", 5, "Port for HTTP server")
+	requestsPerWorker := flag.Int("request", 10, "Port for gRPC server")
+	flag.Parse()
 
+	serviceName := "hello-app"
+	err := setupDiscovery(serviceName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize service discovery: %v\n", err)
+		return
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go watchInstances(ctx, discovery, serviceName)
+
+	// Close
+	defer func() {
+		if err = discovery.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "Service discovery close error: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stdout, "Service discovery closed successfully\n")
+		}
+	}()
+
+	go func() {
+		for {
+			callRequests(serviceName, *numWorkers, *requestsPerWorker)
+			time.Sleep(1 * time.Second)
+		}
+	}()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	fmt.Println("Press Ctrl+C to exit...")
+	<-sigCh
+
+	fmt.Println("\nReceived shutdown signal. Exiting...")
+	os.Exit(0)
+}
 ```
+
 <br/>
 <br/>
 <hr/>
 
 
-## DynamicConfig 动态服务配置
+## 服务动态配置管理
+
+> 同步机制：自动根据 Version 版本控制更新，当配置中心的版本号大于本地配置版本时，会自动同步到本地；反之则会同步到配置中心。
+
 下面是服务动态配置使用的代码的示例：
+
 ```go
 func main() {
 	configs := map[string]*provider.Config{

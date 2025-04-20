@@ -16,10 +16,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/nacos-group/nacos-sdk-go/v2/model"
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
-	"github.com/wenlng/go-service-discovery/base"
-	"github.com/wenlng/go-service-discovery/clientpool"
-	"github.com/wenlng/go-service-discovery/extraconfig"
-	"github.com/wenlng/go-service-discovery/helper"
+	"github.com/wenlng/go-service-link/foundation/clientpool"
+	"github.com/wenlng/go-service-link/foundation/common"
+	"github.com/wenlng/go-service-link/foundation/extraconfig"
+	"github.com/wenlng/go-service-link/foundation/helper"
+	"github.com/wenlng/go-service-link/servicediscovery/instance"
 )
 
 // NacosDiscovery .
@@ -43,7 +44,7 @@ type NacosDiscoveryConfig struct {
 	keepAlive      time.Duration
 	maxRetries     int
 	baseRetryDelay time.Duration
-	tlsConfig      *base.TLSConfig
+	tlsConfig      *common.TLSConfig
 	username       string
 	password       string
 }
@@ -61,6 +62,9 @@ func NewNacosDiscovery(clientConfig NacosDiscoveryConfig) (*NacosDiscovery, erro
 	if !helper.IsDurationSet(clientConfig.baseRetryDelay) {
 		clientConfig.baseRetryDelay = 500 * time.Millisecond
 	}
+
+	clientConfig.NacosExtraConfig.Username = clientConfig.username
+	clientConfig.NacosExtraConfig.Password = clientConfig.password
 
 	pool, err := clientpool.NewNacosNamingPool(clientConfig.poolSize, clientConfig.address, &clientConfig.NacosExtraConfig)
 	if err != nil {
@@ -80,7 +84,7 @@ func (d *NacosDiscovery) SetOutputLogCallback(outputLogCallback OutputLogCallbac
 }
 
 // outLog
-func (d *NacosDiscovery) outLog(logType ServiceDiscoveryLogType, message string) {
+func (d *NacosDiscovery) outLog(logType OutputLogType, message string) {
 	if d.outputLogCallback != nil {
 		d.outputLogCallback(logType, message)
 	}
@@ -116,29 +120,45 @@ func (d *NacosDiscovery) checkAndReRegisterServices(ctx context.Context) error {
 			}
 
 			if !registered {
-				d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The service has not been registered. Re-register: %s, instanceID: %s", svcInfo.ServiceName, instanceID))
-				return d.Register(ctx, svcInfo.ServiceName, instanceID, svcInfo.Host, svcInfo.HTTPPort, svcInfo.GRPCPort)
+				d.outLog(OutputLogTypeWarn, fmt.Sprintf("The service has not been registered. Re-register: %s, instanceID: %s", svcInfo.ServiceName, instanceID))
+				return d.register(ctx, svcInfo.ServiceName, instanceID, svcInfo.Host, svcInfo.HTTPPort, svcInfo.GRPCPort, true)
 			}
 			return nil
 		}
 
 		if err := helper.WithRetry(ctx, operation); err != nil {
-			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+			d.outLog(OutputLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
 			return err
 		}
 	}
 	return nil
 }
 
-// Register .
-func (d *NacosDiscovery) Register(ctx context.Context, serviceName, instanceID, host, httpPort, grpcPort string) error {
+// register .
+func (d *NacosDiscovery) register(ctx context.Context, serviceName, instanceID, host, httpPort, grpcPort string, isReRegister bool) error {
 	cli := d.pool.Get()
 	defer d.pool.Put(cli)
 
 	if instanceID == "" {
-
 		instanceID = uuid.New().String()
 	}
+
+	if !isReRegister {
+		d.mutex.Lock()
+		d.registeredServices[instanceID] = registeredServiceInfo{
+			ServiceName: serviceName,
+			InstanceID:  instanceID,
+			Host:        host,
+			HTTPPort:    httpPort,
+			GRPCPort:    grpcPort,
+		}
+		d.mutex.Unlock()
+	}
+
+	d.outLog(
+		OutputLogTypeInfo,
+		fmt.Sprintf("[ConsulDiscovery] The registration service is beginning...., service: %s, instanceId: %s, host: %s, http_port: %s, grpc_port: %s",
+			serviceName, instanceID, host, httpPort, grpcPort))
 
 	port, _ := strconv.Atoi(httpPort)
 	var success bool
@@ -162,25 +182,26 @@ func (d *NacosDiscovery) Register(ctx context.Context, serviceName, instanceID, 
 		})
 		return err
 	}
-	if err := helper.WithRetry(context.Background(), operation); !success || err != nil {
-		return fmt.Errorf("failed to register instance: %v", err)
+	if err := helper.WithRetry(context.Background(), operation); err != nil {
+		if err = d.checkAndReRegisterServices(ctx); err != nil {
+			d.outLog(OutputLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+		}
 	}
 
-	d.mutex.Lock()
-	d.registeredServices[instanceID] = registeredServiceInfo{
-		ServiceName: serviceName,
-		InstanceID:  instanceID,
-		Host:        host,
-		HTTPPort:    httpPort,
-		GRPCPort:    grpcPort,
+	if !success {
+		return fmt.Errorf("RegisterInstance failed with success=false, serviceName: %s", serviceName)
 	}
-	d.mutex.Unlock()
 
 	d.outLog(
-		ServiceDiscoveryLogTypeInfo,
+		OutputLogTypeInfo,
 		fmt.Sprintf("[NacosDiscovery] Registered instance, service: %s, instanceId: %s, host: %s, http_port: %s, grpc_port: %s",
 			serviceName, instanceID, host, httpPort, grpcPort))
 	return nil
+}
+
+// Register .
+func (d *NacosDiscovery) Register(ctx context.Context, serviceName, instanceID, host, httpPort, grpcPort string) error {
+	return d.register(ctx, serviceName, instanceID, host, httpPort, grpcPort, false)
 }
 
 // Deregister .
@@ -192,11 +213,11 @@ func (d *NacosDiscovery) Deregister(ctx context.Context, serviceName, instanceID
 	if err != nil {
 		return fmt.Errorf("failed to get instances for deregister: %v", err)
 	}
-	var instance model.Instance
+	var curInst model.Instance
 	for _, inst := range instances {
 		if inst.InstanceID == instanceID {
 			port, _ := strconv.Atoi(inst.HTTPPort)
-			instance = model.Instance{
+			curInst = model.Instance{
 				InstanceId:  instanceID,
 				Ip:          inst.Host,
 				Port:        uint64(port),
@@ -209,15 +230,15 @@ func (d *NacosDiscovery) Deregister(ctx context.Context, serviceName, instanceID
 	var success bool
 	operation := func() error {
 		success, err = cli.DeregisterInstance(vo.DeregisterInstanceParam{
-			Ip:          instance.Ip,
-			Port:        instance.Port,
+			Ip:          curInst.Ip,
+			Port:        curInst.Port,
 			ServiceName: serviceName,
 			Ephemeral:   true,
 		})
 		return err
 	}
 	if err = helper.WithRetry(context.Background(), operation); !success || err != nil {
-		return fmt.Errorf("failed to deregister instance: %v", err)
+		return fmt.Errorf("failed to deregister curInst: %v", err)
 	}
 
 	d.mutex.Lock()
@@ -225,15 +246,15 @@ func (d *NacosDiscovery) Deregister(ctx context.Context, serviceName, instanceID
 	d.mutex.Unlock()
 
 	d.outLog(
-		ServiceDiscoveryLogTypeInfo,
-		fmt.Sprintf("[NacosDiscovery] Deregistered instance, service: %s, instanceId: %s", serviceName, instanceID))
+		OutputLogTypeInfo,
+		fmt.Sprintf("[NacosDiscovery] Deregistered curInst, service: %s, instanceId: %s", serviceName, instanceID))
 
 	return nil
 }
 
 // Watch .
-func (d *NacosDiscovery) Watch(ctx context.Context, serviceName string) (chan []base.ServiceInstance, error) {
-	ch := make(chan []base.ServiceInstance, 1)
+func (d *NacosDiscovery) Watch(ctx context.Context, serviceName string) (chan []instance.ServiceInstance, error) {
+	ch := make(chan []instance.ServiceInstance, 1)
 	go func() {
 		defer close(ch)
 
@@ -241,15 +262,26 @@ func (d *NacosDiscovery) Watch(ctx context.Context, serviceName string) (chan []
 			ServiceName: serviceName,
 			SubscribeCallback: func(services []model.Instance, err error) {
 				if err != nil {
-					d.outLog(ServiceDiscoveryLogTypeError, fmt.Sprintf("[NacosDiscovery] Subscribe callback error: %v", err))
+					d.outLog(OutputLogTypeError, fmt.Sprintf("[NacosDiscovery] Subscribe callback error: %v", err))
 					go d.recoverSubscribe(ctx, serviceName, ch)
 					return
 				}
-				instances := make([]base.ServiceInstance, len(services))
+				instances := make([]instance.ServiceInstance, len(services))
 				for i, svc := range services {
-					instances[i] = base.ServiceInstance{
+					httpPort := strconv.FormatUint(svc.Port, 10)
+					grpcPort := ""
+					if port, ok := svc.Metadata["http_port"]; ok {
+						httpPort = port
+					}
+					if port, ok := svc.Metadata["grpc_port"]; ok {
+						grpcPort = port
+					}
+
+					instances[i] = instance.ServiceInstance{
 						InstanceID: svc.InstanceId,
-						Host:       fmt.Sprintf("%s:%d", svc.Ip, svc.Port),
+						Host:       svc.Ip,
+						HTTPPort:   httpPort,
+						GRPCPort:   grpcPort,
 						Metadata:   svc.Metadata,
 					}
 				}
@@ -268,7 +300,7 @@ func (d *NacosDiscovery) Watch(ctx context.Context, serviceName string) (chan []
 			return subscribeErr
 		}
 		if err := helper.WithRetry(context.Background(), operation); err != nil {
-			d.outLog(ServiceDiscoveryLogTypeError, fmt.Sprintf("[NacosDiscovery] Failed to subscribe: %v", err))
+			d.outLog(OutputLogTypeError, fmt.Sprintf("[NacosDiscovery] Failed to subscribe: %v", err))
 			d.pool.Put(cli)
 			return
 		}
@@ -281,7 +313,7 @@ func (d *NacosDiscovery) Watch(ctx context.Context, serviceName string) (chan []
 }
 
 // recoverSubscribe try to restore the subscription
-func (d *NacosDiscovery) recoverSubscribe(ctx context.Context, serviceName string, ch chan []base.ServiceInstance) {
+func (d *NacosDiscovery) recoverSubscribe(ctx context.Context, serviceName string, ch chan []instance.ServiceInstance) {
 	cli := d.pool.Get()
 	defer d.pool.Put(cli)
 
@@ -289,14 +321,25 @@ func (d *NacosDiscovery) recoverSubscribe(ctx context.Context, serviceName strin
 		ServiceName: serviceName,
 		SubscribeCallback: func(services []model.Instance, err error) {
 			if err != nil {
-				d.outLog(ServiceDiscoveryLogTypeError, fmt.Sprintf("[NacosDiscovery] Subscribe to NACOS callback error: %v", err))
+				d.outLog(OutputLogTypeError, fmt.Sprintf("[NacosDiscovery] Subscribe to NACOS callback error: %v", err))
 				return
 			}
-			instances := make([]base.ServiceInstance, len(services))
+			instances := make([]instance.ServiceInstance, len(services))
 			for i, svc := range services {
-				instances[i] = base.ServiceInstance{
+				httpPort := strconv.FormatUint(svc.Port, 10)
+				grpcPort := ""
+				if port, ok := svc.Metadata["http_port"]; ok {
+					httpPort = port
+				}
+				if port, ok := svc.Metadata["grpc_port"]; ok {
+					grpcPort = port
+				}
+
+				instances[i] = instance.ServiceInstance{
 					InstanceID: svc.InstanceId,
-					Host:       fmt.Sprintf("%s:%d", svc.Ip, svc.Port),
+					Host:       svc.Ip,
+					HTTPPort:   httpPort,
+					GRPCPort:   grpcPort,
 					Metadata:   svc.Metadata,
 				}
 			}
@@ -314,19 +357,19 @@ func (d *NacosDiscovery) recoverSubscribe(ctx context.Context, serviceName strin
 		return subscribeErr
 	}
 	if err := helper.WithRetry(context.Background(), operation); err != nil {
-		d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("[NacosDiscovery] The NACOS subscription cannot be restored: %v", err))
+		d.outLog(OutputLogTypeWarn, fmt.Sprintf("[NacosDiscovery] The NACOS subscription cannot be restored: %v", err))
 		return
 	}
 
-	d.outLog(ServiceDiscoveryLogTypeInfo, "[NacosDiscovery] Successfully restored the NACOS subscription")
+	d.outLog(OutputLogTypeInfo, "[NacosDiscovery] Successfully restored the NACOS subscription")
 
 	if err := d.checkAndReRegisterServices(ctx); err != nil {
-		d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+		d.outLog(OutputLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
 	}
 }
 
 // GetInstances .
-func (d *NacosDiscovery) GetInstances(serviceName string) ([]base.ServiceInstance, error) {
+func (d *NacosDiscovery) GetInstances(serviceName string) ([]instance.ServiceInstance, error) {
 	cli := d.pool.Get()
 	defer d.pool.Put(cli)
 
@@ -340,18 +383,29 @@ func (d *NacosDiscovery) GetInstances(serviceName string) ([]base.ServiceInstanc
 		return getErr
 	}
 	if err := helper.WithRetry(context.Background(), operation); err != nil {
-		if err := d.checkAndReRegisterServices(context.Background()); err != nil {
-			d.outLog(ServiceDiscoveryLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+		if err = d.checkAndReRegisterServices(context.Background()); err != nil {
+			d.outLog(OutputLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
 		}
 		return nil, fmt.Errorf("failed to get instances: %v", err)
 	}
 
-	result := make([]base.ServiceInstance, len(service.Hosts))
+	result := make([]instance.ServiceInstance, len(service.Hosts))
 	for i, inst := range service.Hosts {
-		result[i] = base.ServiceInstance{
+		httpPort := strconv.FormatUint(inst.Port, 10)
+		grpcPort := ""
+		if port, ok := inst.Metadata["http_port"]; ok {
+			httpPort = port
+		}
+		if port, ok := inst.Metadata["grpc_port"]; ok {
+			grpcPort = port
+		}
+
+		result[i] = instance.ServiceInstance{
 			InstanceID: inst.InstanceId,
-			Host:       fmt.Sprintf("%s:%d", inst.Ip, inst.Port),
+			Host:       inst.Ip,
 			Metadata:   inst.Metadata,
+			HTTPPort:   httpPort,
+			GRPCPort:   grpcPort,
 		}
 	}
 	return result, nil
