@@ -12,7 +12,7 @@
 
 <br/>
 
-`GoServiceDiscovery` s a manager for service discovery and dynamic configuration, providing a collection of adaptable middleware for microservice architectures. It supports service registration and discovery, load balancing, dynamic configuration synchronization, real-time monitoring, and hot reloading, along with powerful features like connection pooling, health checks, and exponential backoff retries.
+`GoServiceLink` s a manager for service discovery and dynamic configuration, providing a collection of adaptable middleware for microservice architectures. It supports service registration and discovery, load balancing, dynamic configuration synchronization, real-time monitoring, and hot reloading, along with powerful features like connection pooling, health checks, and exponential backoff retries.
 
 > English | [中文](README_zh.md)
 
@@ -44,33 +44,35 @@ var discovery servicediscovery.ServiceDiscovery
 func setupDiscovery(serviceName, httPort, grpcPort string) error {
 	var err error
 	discovery, err = servicediscovery.NewServiceDiscovery(servicediscovery.Config{
-		Type:  servicediscovery.ServiceDiscoveryTypeEtcd,
-		Addrs: "localhost:2379",
-
-		//Type:        servicediscovery.ServiceDiscoveryTypeZookeeper,
-		//Addrs:       "localhost:2181",
-
-		//Type:        servicediscovery.ServiceDiscoveryTypeNacos,
-		//Addrs:       "localhost:8848",
-		//Username: "nacos",
-		//Password: "nacos",
+		//Type:  servicediscovery.ServiceDiscoveryTypeEtcd,
+		//Addrs: "localhost:2379",
 
 		//Type:  servicediscovery.ServiceDiscoveryTypeConsul,
 		//Addrs: "localhost:8500",
 
-		TTL:         10 * time.Second,
-		KeepAlive:   3 * time.Second,
+		//Type:  servicediscovery.ServiceDiscoveryTypeZookeeper,
+		//Addrs: "localhost:2181",
+
+		Type:     servicediscovery.ServiceDiscoveryTypeNacos,
+		Addrs:    "localhost:8848",
+		Username: "nacos",
+		Password: "nacos",
+
 		ServiceName: serviceName,
 	})
 	if err != nil {
 		return err
 	}
 
-	discovery.SetOutputLogCallback(func(logType servicediscovery.ServiceDiscoveryLogType, message string) {
-		if logType == servicediscovery.ServiceDiscoveryLogTypeInfo {
-			fmt.Fprintf(os.Stdout, "[Service Discovery Log]: %v\n", message)
+	discovery.SetOutputLogCallback(func(logType servicediscovery.OutputLogType, message string) {
+		if logType == servicediscovery.OutputLogTypeError {
+			fmt.Fprintf(os.Stderr, "ERROR - "+message+"\n")
+		} else if logType == servicediscovery.OutputLogTypeWarn {
+			fmt.Fprintf(os.Stdout, "WARN - "+message+"\n")
+		} else if logType == servicediscovery.OutputLogTypeDebug {
+			fmt.Fprintf(os.Stdout, "DEBUG - "+message+"\n")
 		} else {
-			fmt.Fprintf(os.Stderr, "[Service Discovery Log]: %v\n", message)
+			fmt.Fprintf(os.Stdout, "INFO -"+message+"\n")
 		}
 	})
 
@@ -122,7 +124,7 @@ func main() {
 	os.Exit(0)
 }
 
-// watchInstances watch service instances
+// watchInstances ...
 func watchInstances(ctx context.Context, discovery servicediscovery.ServiceDiscovery, serviceName, instanceID string) {
 	if discovery == nil {
 		return
@@ -151,7 +153,6 @@ func watchInstances(ctx context.Context, discovery servicediscovery.ServiceDisco
 		}
 	}
 }
-
 ```
 
 ## Client Side
@@ -165,40 +166,42 @@ var discovery *servicediscovery.DiscoveryWithLB
 func setupDiscovery(serviceName string) error {
 	var err error
 	discovery, err = servicediscovery.NewDiscoveryWithLB(servicediscovery.Config{
-		Type:  servicediscovery.ServiceDiscoveryTypeEtcd,
-		Addrs: "localhost:2379",
-
-		//Type:        servicediscovery.ServiceDiscoveryTypeZookeeper,
-		//Addrs:       "localhost:2181",
-
-		//Type:        servicediscovery.ServiceDiscoveryTypeNacos,
-		//Addrs:       "localhost:8848",
-		//Username: "nocos",
-		//Password: "nocos",
+		//Type:  servicediscovery.ServiceDiscoveryTypeEtcd,
+		//Addrs: "localhost:2379",
 
 		//Type:  servicediscovery.ServiceDiscoveryTypeConsul,
 		//Addrs: "localhost:8500",
 
-		TTL:         10 * time.Second,
-		KeepAlive:   3 * time.Second,
+		//Type:  servicediscovery.ServiceDiscoveryTypeZookeeper,
+		//Addrs: "localhost:2181",
+
+		Type:     servicediscovery.ServiceDiscoveryTypeNacos,
+		Addrs:    "localhost:8848",
+		Username: "nacos",
+		Password: "nacos",
+
 		ServiceName: serviceName,
 	}, balancer.LoadBalancerTypeRoundRobin)
 	if err != nil {
 		return err
 	}
 
-	discovery.SetOutputLogCallback(func(logType servicediscovery.ServiceDiscoveryLogType, message string) {
-		if logType == servicediscovery.ServiceDiscoveryLogTypeInfo {
-			fmt.Fprintf(os.Stdout, "[Service Discovery Log]: %v\n", message)
+	discovery.SetOutputLogCallback(func(logType servicediscovery.OutputLogType, message string) {
+		if logType == servicediscovery.OutputLogTypeError {
+			fmt.Fprintf(os.Stderr, "ERROR - "+message+"\n")
+		} else if logType == servicediscovery.OutputLogTypeWarn {
+			fmt.Fprintf(os.Stdout, "WARN - "+message+"\n")
+		} else if logType == servicediscovery.OutputLogTypeDebug {
+			fmt.Fprintf(os.Stdout, "DEBUG - "+message+"\n")
 		} else {
-			fmt.Fprintf(os.Stderr, "[Service Discovery Log]: %v\n", message)
+			fmt.Fprintf(os.Stdout, "INFO -"+message+"\n")
 		}
 	})
 
 	return nil
 }
 
-// watchInstances periodically updates service instances
+// watchInstances ...
 func watchInstances(ctx context.Context, discovery servicediscovery.ServiceDiscovery, serviceName string) {
 	if discovery == nil {
 		return
@@ -224,16 +227,13 @@ func watchInstances(ctx context.Context, discovery servicediscovery.ServiceDisco
 }
 
 func selectUrl(serviceName string) string {
-	inst, err := discovery.Select(serviceName, helper.GetHostname())
+	hostname, _ := os.Hostname()
+	inst, err := discovery.Select(serviceName, hostname)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to select instance: %v\n", err)
 		return ""
 	}
-	httpPort, ok := inst.Metadata["http_port"]
-	if !ok {
-		fmt.Fprintf(os.Stderr, "http_port not found in instance metadata\n")
-		return ""
-	}
+	httpPort := inst.HTTPPort
 	return fmt.Sprintf("http://%s:%s/hello", inst.Host, httpPort)
 }
 
@@ -268,7 +268,6 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
 	go watchInstances(ctx, discovery, serviceName)
 
 	// Close
@@ -280,6 +279,7 @@ func main() {
 		}
 	}()
 
+	fmt.Println(">>>>>>> string call request ...")
 	go func() {
 		for {
 			callRequests(serviceName, *numWorkers, *requestsPerWorker)
@@ -310,17 +310,29 @@ Below is an example of dynamic configuration usage:
 ```go
 func main() {
 	configs := map[string]*provider.Config{
-		"/config/go-captcha-service/app": {
-			Name:    "app-config",
-			Version: 0,
-			//Version: 1856136267083311000,
+		"/config/my-app/main": {
+			Name: "my-service-app-main",
+			//Version: 0,
+			Version: 2676136267083311000,
 			Content: `{"AppName": "my-app-main", "Port": 8081, DebugMode: false }`,
+			ValidateCallback: func(config *provider.Config) (skip bool, err error) {
+				if config.Content == "" {
+					return false, fmt.Errorf("contnet must be not empty")
+				}
+				return true, nil
+			},
 		},
-		"/config/go-captcha-service/db": {
-			Name:    "db-config",
-			Version: 0,
-			//Version: 1856136267083311000,
-			Content: `{"AppName": "my-app-main", "Port": 3306 }`,
+		"/config/my-app/db": {
+			Name: "my-service-app-db",
+			//Version: 0,
+			Version: 2676136267083311000,
+			Content: `{"AppName": "my-app-db", "Port": 3306 }`,
+			ValidateCallback: func(config *provider.Config) (skip bool, err error) {
+				if config.Content == "" {
+					return false, fmt.Errorf("contnet must be not empty")
+				}
+				return true, nil
+			},
 		},
 	}
 
@@ -330,21 +342,19 @@ func main() {
 	}
 
 	providerCfg := provider.ProviderConfig{
-		Type:      provider.ProviderTypeEtcd,
-		Endpoints: []string{"localhost:2379"},
+		//Type:      provider.ProviderTypeEtcd,
+		//Endpoints: []string{"localhost:2379"},
 
-		//Type: provider.ProviderTypeConsul,
-		//Endpoints: []string{
-		//	"localhost:8500",
-		//},
+		//Type:      provider.ProviderTypeConsul,
+		//Endpoints: []string{"localhost:8500"},
 
 		//Type:      provider.ProviderTypeZookeeper,
 		//Endpoints: []string{"localhost:2181"},
 
-		//Type:      provider.ProviderTypeNacos,
-		//Endpoints: []string{"localhost:8848"},
-		//Username: "nacos",
-		//Password: "nacos",
+		Type:      provider.ProviderTypeNacos,
+		Endpoints: []string{"localhost:8848"},
+		Username:  "nacos",
+		Password:  "nacos",
 		//NacosProviderConfig: provider.NacosProviderConfig{
 		//	NacosExtraConfig: extraconfig.NacosExtraConfig{
 		//		NamespaceId: "",
@@ -358,20 +368,28 @@ func main() {
 		return
 	}
 
-	p.SetOutputLogCallback(func(logType helper.OutputLogType, message string) {
-		if logType == helper.OutputLogTypeError {
-			fmt.Fprintf(os.Stderr, message+"\n")
+	p.SetOutputLogCallback(func(logType dynaconfig.OutputLogType, message string) {
+		if logType == dynaconfig.OutputLogTypeError {
+			fmt.Fprintf(os.Stderr, "ERROR - "+message+"\n")
+		} else if logType == dynaconfig.OutputLogTypeWarn {
+			fmt.Fprintf(os.Stdout, "WARN - "+message+"\n")
+		} else if logType == dynaconfig.OutputLogTypeDebug {
+			fmt.Fprintf(os.Stdout, "DEBUG - "+message+"\n")
 		} else {
-			fmt.Fprintf(os.Stdout, message+"\n")
+			fmt.Fprintf(os.Stdout, "INFO -"+message+"\n")
 		}
 	})
 
-	manager := dynamicconfig.NewConfigManager(p, configs, keys)
-	manager.SetOutputLogCallback(func(logType helper.OutputLogType, message string) {
-		if logType == helper.OutputLogTypeError {
-			fmt.Fprintf(os.Stderr, message+"\n")
+	manager := dynaconfig.NewConfigManager(p, configs, keys)
+	manager.SetOutputLogCallback(func(logType dynaconfig.OutputLogType, message string) {
+		if logType == dynaconfig.OutputLogTypeError {
+			fmt.Fprintf(os.Stderr, "ERROR - "+message+"\n")
+		} else if logType == dynaconfig.OutputLogTypeWarn {
+			fmt.Fprintf(os.Stdout, "WARN - "+message+"\n")
+		} else if logType == dynaconfig.OutputLogTypeDebug {
+			fmt.Fprintf(os.Stdout, "DEBUG - "+message+"\n")
 		} else {
-			fmt.Fprintf(os.Stdout, message+"\n")
+			fmt.Fprintf(os.Stdout, "INFO -"+message+"\n")
 		}
 	})
 
@@ -387,41 +405,54 @@ func main() {
 	})
 	manager.Subscribe(func(key string, config *provider.Config) error {
 		if key == "/config/my-app/main" {
-			// testing panic ...
+			// test panic
 			//panic("Simulated panic in callback")
 		}
 		return nil
 	})
 
-	if err = manager.SyncConfig(context.Background()); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to sync config: %v\n", err)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	manager.ASyncConfig(ctx)
+	//if err = manager.SyncConfig(context.Background()); err != nil {
+	//	fmt.Fprintf(os.Stderr, "Failed to sync config: %v\n", err)
+	//	return
+	//}
+
+	if err = manager.Watch(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to start watch: %v \n", err)
 		return
 	}
 
+	defer func() {
+		if err = manager.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to close: %v \n", err)
+		}
+	}()
+
+	//////////////////////// testing /////////////////////////
+	// Testing read the configuration content in real time
 	go func() {
 		for {
 			time.Sleep(3 * time.Second)
 			for _, key := range keys {
 				config := manager.GetLocalConfig(key)
-				fmt.Printf(">>> Current config for %s: %+v\n", key, config)
+				fmt.Printf("+++++++ >>> Current config for %s: %+v\n", key, config)
 			}
 		}
 	}()
+	/////////////////////////////////////////////////
 
-	if err := manager.Watch(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to start watch: %v \n", err)
-		return
-	}
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	fmt.Println(">>>>>>>> start watching ....")
+	fmt.Println("Press Ctrl+C to exit...")
+	<-sigCh
 
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	wg.Wait()
+	fmt.Println("\nReceived shutdown signal. Exiting...")
+	os.Exit(0)
 
-	if err := manager.Close(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to close: %v \n", err)
-	}
 }
 ```
 
