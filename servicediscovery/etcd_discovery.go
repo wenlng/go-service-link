@@ -399,7 +399,7 @@ func (d *EtcdDiscovery) GetInstances(serviceName string) ([]instance.ServiceInst
 			httpPort = port
 		}
 		if port, ok := inst.Metadata["grpc_port"]; ok {
-			httpPort = port
+			grpcPort = port
 		}
 
 		inst.HTTPPort = httpPort

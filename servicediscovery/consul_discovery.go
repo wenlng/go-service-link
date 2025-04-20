@@ -319,7 +319,7 @@ func (d *ConsulDiscovery) servicesToInstances(services []*api.ServiceEntry) []in
 			httpPort = port
 		}
 		if port, ok := svc.Service.Meta["grpc_port"]; ok {
-			httpPort = port
+			grpcPort = port
 		}
 
 		instances = append(instances, instance.ServiceInstance{

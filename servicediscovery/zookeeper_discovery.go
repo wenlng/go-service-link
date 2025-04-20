@@ -401,7 +401,7 @@ func (d *ZooKeeperDiscovery) GetInstances(serviceName string) ([]instance.Servic
 			httpPort = port
 		}
 		if port, ok := inst.Metadata["grpc_port"]; ok {
-			httpPort = port
+			grpcPort = port
 		}
 
 		inst.HTTPPort = httpPort
