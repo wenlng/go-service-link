@@ -1,6 +1,6 @@
 <div align="center">
 <h1 style="margin: 0; padding: 0">Go Service Link</h1>
-<p style="margin: 0; padding: 0">Service Discovery and Dynamic Configuration Management for Golang</p>
+<p style="margin: 0; padding: 0">用于 Golang 的服务发现和服务动态配置管理 </p>
 <br/>
 <a href="https://goreportcard.com/report/github.com/wenlng/go-service-link"><img src="https://goreportcard.com/badge/github.com/wenlng/go-service-link"/></a>
 <a href="https://godoc.org/github.com/wenlng/go-service-link"><img src="https://godoc.org/github.com/wenlng/go-service-link?status.svg"/></a>
@@ -12,30 +12,60 @@
 
 <br/>
 
-`Go Service Link` s a manager for service discovery and dynamic configuration, providing a collection of adaptable middleware for microservice architectures. It supports service registration and discovery, load balancing, dynamic configuration synchronization, real-time monitoring, and hot reloading, along with powerful features like connection pooling, health checks, and exponential backoff retries.
+`Go Service Link` 是服务发现和动态配置的管理器，提供多种中间件可适配的合集，适用于微服务架构，支持服务注册与发现、负载均衡、动态配置同步、实时监控和热加载等功能，同时具备连接池、健康检查和指数退避重试等强大功能。
 
-> English | [中文](README_zh.md)
+<br/>
 
-⭐️ If this project helps you, please give it a star!
+> [English](README.md) | 中文
+<p> ⭐️ 如果能帮助到你，请随手给点一个star</p>
 
-## Features
-- **Service Registration**: Automatically registers service information with middleware upon startup, supporting lease mechanisms to ensure service state updates.
-- **Service Discovery**: Clients dynamically retrieve service lists from middleware, with real-time monitoring of service changes.
-- **Load Balancing**: Offers multiple load balancing strategies (Random, Round-Robin, Consistent-Hash).
-- **Supported Middleware**: Etcd, Consul, ZooKeeper, Nacos.
-- **Dynamic Configuration Management**: Synchronizes local and remote configurations, monitors configuration changes in real-time, and triggers hot reloading.
-- **Connection Pool**: Maintains client connection pools for each configuration center to improve performance and resource utilization.
-- **Distributed Locks**: Uses distributed locks (e.g., Etcd mutex, Consul lock, ZooKeeper lock) to ensure the safety of configuration updates.
-- **Health Checks**: Periodically checks the health status of configuration centers, providing metrics like latency, leader status, and cluster size.
-- **Reconnection and Retry**: Automatically reconnects to disconnected configuration centers and retries failed operations using an exponential backoff strategy.
-- **Graceful Shutdown**: Properly cleans up resources (connections, listeners) when the application terminates.
-- **Example Code**: Includes server/client examples demonstrating practical applications of service discovery.
-- **Modular Design**: Clear code structure (servicediscovery, dynaconfig), easy to extend and integrate.
+## 功能特性
+- **服务注册**：服务启动时自动向服务中间件注册服务信息，支持租约机制确保服务状态更新。
+- **服务发现**：客户端从服务中间件动态获取服务列表，支持实时监听服务变化。
+- **负载均衡**：提供轮询多种负载均衡策略（Random、Round-Robin、Consistent-Hash）。
+- **支持中间件**：Etcd、Consul、ZooKeeper、Nacos。
+- **动态配置管理**： 同步本地和远程配置、实时监控配置变化并触发热加载。
+- **连接池**：为每个配置中心维护客户端连接池，提升性能和资源利用率。
+- **分布式锁**：使用分布式锁（例如 Etcd mutex、Consul 锁、ZooKeeper 锁）确保配置更新的安全性。
+- **健康检查**：定期检查配置中心的健康状态，提供延迟、领导者状态和集群规模等指标。
+- **重连和重试**： 自动重连断开的配置中心、使用指数退避策略重试失败的操作。
+- **优雅关闭**：在应用终止时正确清理资源（连接、监听器）。
+- **示例代码**：包含服务端/客户端示例，展示服务发现的实际应用。
+- **模块化设计**：代码结构清晰（servicediscovery、dynaconfig），易于扩展和集成。
+
+<br/>
 
 
-## Server Side
+### 设置Go代理
+- Window
+```shell
+$ set GO111MODULE=on
+$ set GOPROXY=https://goproxy.io,direct
 
-Below is an example of server-side service registration code:
+### The Golang 1.13+ can be executed directly
+$ go env -w GO111MODULE=on
+$ go env -w GOPROXY=https://goproxy.io,direct
+```
+- Linux or Mac
+```shell
+$ export GO111MODULE=on
+$ export GOPROXY=https://goproxy.io,direct
+
+### or
+$ echo "export GO111MODULE=on" >> ~/.profile
+$ echo "export GOPROXY=https://goproxy.cn,direct" >> ~/.profile
+$ source ~/.profile
+```
+
+### 安装
+```shell
+$ go get -u github.com/wenlng/go-service-link@latest
+```
+
+---
+
+## 服务发现 - Service 端
+下面是一个服务器端服务注册代码的例子：
 
 ```go
 var discovery servicediscovery.ServiceDiscovery
@@ -155,10 +185,10 @@ func watchInstances(ctx context.Context, discovery servicediscovery.ServiceDisco
 }
 ```
 
-## Client Side
 
-Below is an example of client-side service discovery and load balancing code:
 
+## 服务发现 - Client 端
+下面是客户端服务发现和负载平衡代码的示例：
 ```go
 var discovery *servicediscovery.DiscoveryWithLB
 
@@ -302,10 +332,12 @@ func main() {
 <br/>
 <hr/>
 
-## Dynamic Configuration Management
-> Synchronization Mechanism: Automatically updates based on version control. When the configuration center’s version is higher than the local version, it syncs to the local system; otherwise, it syncs to the configuration center.
 
-Below is an example of dynamic configuration usage:
+## 服务动态配置管理
+
+> 同步机制：自动根据 Version 版本控制更新，当配置中心的版本号大于本地配置版本时，会自动同步到本地；反之则会同步到配置中心。
+
+下面是服务动态配置使用的代码的示例：
 
 ```go
 func main() {
@@ -440,5 +472,6 @@ func main() {
 ```
 
 ## LICENSE
-
 MIT
+
+<br/>
