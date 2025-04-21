@@ -115,14 +115,14 @@ func (d *EtcdDiscovery) checkAndReRegisterServices(ctx context.Context) error {
 				return fmt.Errorf("failed to check the service registration status: %v", err)
 			}
 			if len(resp.Kvs) == 0 {
-				d.outLog(OutputLogTypeWarn, fmt.Sprintf("The service has not been registered. Re-register: %s, instanceID: %s", svcInfo.ServiceName, instanceID))
+				d.outLog(OutputLogTypeWarn, fmt.Sprintf("[EtcdDiscovery] The service has not been registered. Re-register: %s, instanceID: %s", svcInfo.ServiceName, instanceID))
 				return d.register(ctx, svcInfo.ServiceName, instanceID, svcInfo.Host, svcInfo.HTTPPort, svcInfo.GRPCPort, true)
 			}
 			return nil
 		}
 
 		if err := helper.WithRetry(ctx, operation); err != nil {
-			d.outLog(OutputLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+			d.outLog(OutputLogTypeWarn, fmt.Sprintf("[EtcdDiscovery] Faild to the re-registration service: %v", err))
 			return err
 		}
 	}
@@ -220,12 +220,12 @@ func (d *EtcdDiscovery) watchKeepAlive(ctx context.Context) {
 		select {
 		case _, ok := <-d.keepAliveCh:
 			if !ok {
-				d.outLog(OutputLogTypeWarn, "KeepAlive channel closed")
+				d.outLog(OutputLogTypeWarn, "[EtcdDiscovery] KeepAlive channel closed")
 				go d.recoverKeepAlive(ctx)
 				return
 			}
 		case <-ctx.Done():
-			d.outLog(OutputLogTypeWarn, "Stopping keepalive")
+			d.outLog(OutputLogTypeWarn, "[EtcdDiscovery] Stopping keepalive")
 			return
 		}
 	}
@@ -251,11 +251,11 @@ func (d *EtcdDiscovery) recoverKeepAlive(ctx context.Context) {
 	}
 
 	if err := d.checkAndReRegisterServices(ctx); err != nil {
-		d.outLog(OutputLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+		d.outLog(OutputLogTypeWarn, fmt.Sprintf("[EtcdDiscovery] Failed to the re-registration service: %v", err))
 	}
 
 	go d.watchKeepAlive(ctx)
-	d.outLog(OutputLogTypeInfo, "The heart rate of Ectd was successfully restored")
+	d.outLog(OutputLogTypeInfo, "[EtcdDiscovery] The heart rate of Ectd was successfully restored")
 }
 
 // Deregister .
@@ -337,7 +337,7 @@ func (d *EtcdDiscovery) recoverWatch(ctx context.Context, serviceName string, ch
 	rch := cli.Watch(ctx, prefix, clientv3.WithPrefix())
 
 	if err := d.checkAndReRegisterServices(ctx); err != nil {
-		d.outLog(OutputLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+		d.outLog(OutputLogTypeWarn, fmt.Sprintf("failed to re-registration service: %v", err))
 	}
 
 	go func() {

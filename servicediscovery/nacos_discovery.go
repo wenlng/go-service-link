@@ -119,14 +119,14 @@ func (d *NacosDiscovery) checkAndReRegisterServices(ctx context.Context) error {
 			}
 
 			if !registered {
-				d.outLog(OutputLogTypeWarn, fmt.Sprintf("The service has not been registered. Re-register: %s, instanceID: %s", svcInfo.ServiceName, instanceID))
+				d.outLog(OutputLogTypeWarn, fmt.Sprintf("[NacosDiscovery] The service has not been registered. Re-register: %s, instanceID: %s", svcInfo.ServiceName, instanceID))
 				return d.register(ctx, svcInfo.ServiceName, instanceID, svcInfo.Host, svcInfo.HTTPPort, svcInfo.GRPCPort, true)
 			}
 			return nil
 		}
 
 		if err := helper.WithRetry(ctx, operation); err != nil {
-			d.outLog(OutputLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+			d.outLog(OutputLogTypeWarn, fmt.Sprintf("[NacosDiscovery] Failed to the re-registration service: %v", err))
 			return err
 		}
 	}
@@ -156,7 +156,7 @@ func (d *NacosDiscovery) register(ctx context.Context, serviceName, instanceID, 
 
 	d.outLog(
 		OutputLogTypeInfo,
-		fmt.Sprintf("[ConsulDiscovery] The registration service is beginning...., service: %s, instanceId: %s, host: %s, http_port: %s, grpc_port: %s",
+		fmt.Sprintf("[NacosDiscovery] The registration service is beginning...., service: %s, instanceId: %s, host: %s, http_port: %s, grpc_port: %s",
 			serviceName, instanceID, host, httpPort, grpcPort))
 
 	port, _ := strconv.Atoi(httpPort)
@@ -183,7 +183,7 @@ func (d *NacosDiscovery) register(ctx context.Context, serviceName, instanceID, 
 	}
 	if err := helper.WithRetry(context.Background(), operation); err != nil {
 		if err = d.checkAndReRegisterServices(ctx); err != nil {
-			d.outLog(OutputLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+			d.outLog(OutputLogTypeWarn, fmt.Sprintf("[NacosDiscovery] Failed to the re-registration service: %v", err))
 		}
 	}
 
@@ -363,7 +363,7 @@ func (d *NacosDiscovery) recoverSubscribe(ctx context.Context, serviceName strin
 	d.outLog(OutputLogTypeInfo, "[NacosDiscovery] Successfully restored the NACOS subscription")
 
 	if err := d.checkAndReRegisterServices(ctx); err != nil {
-		d.outLog(OutputLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+		d.outLog(OutputLogTypeWarn, fmt.Sprintf("[NacosDiscovery] Failed to the re-registration service: %v", err))
 	}
 }
 
@@ -383,7 +383,7 @@ func (d *NacosDiscovery) GetInstances(serviceName string) ([]instance.ServiceIns
 	}
 	if err := helper.WithRetry(context.Background(), operation); err != nil {
 		if err = d.checkAndReRegisterServices(context.Background()); err != nil {
-			d.outLog(OutputLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+			d.outLog(OutputLogTypeWarn, fmt.Sprintf("[NacosDiscovery] Failed to the re-registration service: %v", err))
 		}
 		return nil, fmt.Errorf("failed to get instances: %v", err)
 	}
