@@ -174,13 +174,13 @@ func (p *NacosProvider) HealthCheck(ctx context.Context) HealthStatus {
 	if err != nil {
 		return HealthStatus{Metrics: metrics, Err: fmt.Errorf("nacos write check failed: %v", err)}
 	}
+	metrics["latency_ms"] = time.Since(start).Milliseconds()
 
 	// Check the reading capability
 	_, err = client.GetConfig(vo.ConfigParam{DataId: "health.test", Group: "DEFAULT_GROUP"})
-	if err != nil {
+	if err != nil && !strings.Contains(err.Error(), "config data not exist") {
 		return HealthStatus{Metrics: metrics, Err: fmt.Errorf("nacos health check failed: %v", err)}
 	}
-	metrics["latency_ms"] = time.Since(start).Milliseconds()
 
 	// Check the deleting capability
 	_, err = client.DeleteConfig(vo.ConfigParam{DataId: "health.test", Group: "DEFAULT_GROUP"})

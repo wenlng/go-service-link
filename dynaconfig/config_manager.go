@@ -177,7 +177,7 @@ func (m *ConfigManager) SyncConfig(ctx context.Context) error {
 
 // RefreshConfig sync refresh configuration
 func (m *ConfigManager) RefreshConfig(ctx context.Context, key string, p *provider.Config) {
-	if _, ok := m.configs["key"]; !ok {
+	if _, ok := m.configs[key]; !ok {
 		return
 	}
 
