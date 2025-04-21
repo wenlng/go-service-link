@@ -16,6 +16,7 @@ import (
 	"github.com/wenlng/go-service-link/foundation/helper"
 )
 
+// OutputLogType ..
 type OutputLogType = helper.OutputLogType
 
 const (
@@ -49,6 +50,7 @@ type ConfigManager struct {
 	outputLogCallback OutputLogCallback
 }
 
+// ConfigManagerParams ..
 type ConfigManagerParams struct {
 	ProviderConfig provider.ProviderConfig
 	Configs        map[string]*provider.Config
@@ -107,7 +109,7 @@ func (m *ConfigManager) ASyncConfig(ctx context.Context) {
 		err := m.SyncConfig(ctx)
 		if err != nil {
 			if m.outputLogCallback != nil {
-				m.outputLogCallback(helper.OutputLogTypeError, fmt.Sprintf("async config err: %v", err))
+				m.outputLogCallback(helper.OutputLogTypeError, fmt.Sprintf("[ConfigManager] Async config err: %v", err))
 			}
 		}
 	}()
@@ -313,7 +315,7 @@ func (m *ConfigManager) startHealthCheck() {
 					}
 				} else {
 					m.healthFreq = 10 * time.Second // Return to the normal frequency when successful
-					m.outLog(helper.OutputLogTypeInfo, fmt.Sprintf("[ConfigManager] Health check passed, metrics: %v", status.Metrics))
+					m.outLog(helper.OutputLogTypeDebug, fmt.Sprintf("[ConfigManager] Health check passed, metrics: %v", status.Metrics))
 				}
 				ticker.Reset(m.healthFreq)
 			}
@@ -339,6 +341,5 @@ func (m *ConfigManager) Close() error {
 	}
 
 	m.outLog(helper.OutputLogTypeInfo, fmt.Sprintf("[ConfigManager] Config manager closed"))
-
 	return nil
 }

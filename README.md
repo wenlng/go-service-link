@@ -1,5 +1,5 @@
 <div align="center">
-<h1 style="margin: 0; padding: 0">GoServiceLink</h1>
+<h1 style="margin: 0; padding: 0">Go Service Link</h1>
 <p style="margin: 0; padding: 0">Service Discovery and Dynamic Configuration Management for Golang</p>
 <br/>
 <a href="https://goreportcard.com/report/github.com/wenlng/go-service-link"><img src="https://goreportcard.com/badge/github.com/wenlng/go-service-link"/></a>
@@ -12,7 +12,7 @@
 
 <br/>
 
-`GoServiceLink` s a manager for service discovery and dynamic configuration, providing a collection of adaptable middleware for microservice architectures. It supports service registration and discovery, load balancing, dynamic configuration synchronization, real-time monitoring, and hot reloading, along with powerful features like connection pooling, health checks, and exponential backoff retries.
+`Go Service Link` s a manager for service discovery and dynamic configuration, providing a collection of adaptable middleware for microservice architectures. It supports service registration and discovery, load balancing, dynamic configuration synchronization, real-time monitoring, and hot reloading, along with powerful features like connection pooling, health checks, and exponential backoff retries.
 
 > English | [中文](README_zh.md)
 

@@ -1,5 +1,5 @@
 <div align="center">
-<h1 style="margin: 0; padding: 0">GoServiceLink</h1>
+<h1 style="margin: 0; padding: 0">Go Service Link</h1>
 <p style="margin: 0; padding: 0">用于 Golang 的服务发现和服务动态配置管理 </p>
 <br/>
 <a href="https://goreportcard.com/report/github.com/wenlng/go-service-link"><img src="https://goreportcard.com/badge/github.com/wenlng/go-service-link"/></a>
@@ -12,7 +12,7 @@
 
 <br/>
 
-`GoServiceLink` 是服务发现和动态配置的管理器，提供多种中间件可适配的合集，适用于微服务架构，支持服务注册与发现、负载均衡、动态配置同步、实时监控和热加载等功能，同时具备连接池、健康检查和指数退避重试等强大功能。
+`Go Service Link` 是服务发现和动态配置的管理器，提供多种中间件可适配的合集，适用于微服务架构，支持服务注册与发现、负载均衡、动态配置同步、实时监控和热加载等功能，同时具备连接池、健康检查和指数退避重试等强大功能。
 
 <br/>
 
@@ -34,6 +34,35 @@
 - **模块化设计**：代码结构清晰（servicediscovery、dynaconfig），易于扩展和集成。
 
 <br/>
+
+
+### 设置Go代理
+- Window
+```shell
+$ set GO111MODULE=on
+$ set GOPROXY=https://goproxy.io,direct
+
+### The Golang 1.13+ can be executed directly
+$ go env -w GO111MODULE=on
+$ go env -w GOPROXY=https://goproxy.io,direct
+```
+- Linux or Mac
+```shell
+$ export GO111MODULE=on
+$ export GOPROXY=https://goproxy.io,direct
+
+### or
+$ echo "export GO111MODULE=on" >> ~/.profile
+$ echo "export GOPROXY=https://goproxy.cn,direct" >> ~/.profile
+$ source ~/.profile
+```
+
+### 安装
+```shell
+$ go get -u github.com/wenlng/go-service-link@latest
+```
+
+---
 
 ## 服务发现 - Service 端
 下面是一个服务器端服务注册代码的例子：

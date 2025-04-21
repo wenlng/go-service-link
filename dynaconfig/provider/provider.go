@@ -14,6 +14,7 @@ import (
 	"github.com/wenlng/go-service-link/foundation/helper"
 )
 
+// ProviderType ..
 type ProviderType string
 
 // ProviderType .

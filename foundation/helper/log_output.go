@@ -1,5 +1,6 @@
 package helper
 
+// OutputLogType .
 type OutputLogType string
 
 const (
@@ -9,4 +10,5 @@ const (
 	OutputLogTypeDebug               = "debug"
 )
 
+// OutputLogCallback ..
 type OutputLogCallback = func(logType OutputLogType, message string)

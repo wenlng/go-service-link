@@ -12,6 +12,7 @@ import (
 	"github.com/wenlng/go-service-link/servicediscovery/instance"
 )
 
+// NoopDiscovery ..
 type NoopDiscovery struct{}
 
 // SetOutputLogCallback .

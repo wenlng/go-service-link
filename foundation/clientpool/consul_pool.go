@@ -61,7 +61,7 @@ func (p *ConsulPool) Put(cli *api.Client) {
 	select {
 	case p.clients <- cli:
 	default:
-		// Pass
+		// @Pass
 	}
 }
 

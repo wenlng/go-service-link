@@ -16,6 +16,7 @@ import (
 // RandomBalancer implements random load balancing
 type RandomBalancer struct{}
 
+// NewRandomBalancer ..
 func NewRandomBalancer() LoadBalancer {
 	return &RandomBalancer{}
 }

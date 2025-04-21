@@ -75,7 +75,7 @@ func (p *NacosConfigPool) Put(client config_client.IConfigClient) {
 	select {
 	case p.clientChans <- client:
 	default:
-		// Pass
+		// @Pass
 	}
 }
 
@@ -142,7 +142,7 @@ func (p *NacosNamingPool) Put(client naming_client.INamingClient) {
 	select {
 	case p.clientChans <- client:
 	default:
-		// Pass
+		// @Pass
 	}
 }
 

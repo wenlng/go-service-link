@@ -40,6 +40,7 @@ const (
 	ServiceDiscoveryTypeNone                           = "none"
 )
 
+// OutputLogType ..
 type OutputLogType = helper.OutputLogType
 
 const (
@@ -49,6 +50,7 @@ const (
 	OutputLogTypeDebug = helper.OutputLogTypeDebug
 )
 
+// OutputLogCallback ..
 type OutputLogCallback = helper.OutputLogCallback
 
 // ServiceDiscovery defines the interface for service discovery

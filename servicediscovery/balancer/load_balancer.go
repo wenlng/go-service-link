@@ -10,6 +10,7 @@ import (
 	"github.com/wenlng/go-service-link/servicediscovery/instance"
 )
 
+// LoadBalancerType ..
 type LoadBalancerType string
 
 // LoadBalancerType .

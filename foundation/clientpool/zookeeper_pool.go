@@ -54,19 +54,6 @@ func NewZooKeeperPool(poolSize int, serverAddrs []string, config *extraconfig.Zo
 
 		conn.SetLogger(zl)
 
-		//timeout := time.After(5 * time.Second)
-		//for conn.State() != zk.StateHasSession {
-		//	select {
-		//	case <-events:
-		//		continue
-		//	case <-timeout:
-		//		conn.Close()
-		//		return nil, fmt.Errorf("the connection to ZooKeeper has timed out")
-		//	case <-time.After(100 * time.Millisecond):
-		//		continue
-		//	}
-		//}
-
 		err = config.MergeTo(conn)
 		if err != nil {
 			return nil, err

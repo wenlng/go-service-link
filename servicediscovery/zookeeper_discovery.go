@@ -25,7 +25,6 @@ import (
 
 // ZooKeeperDiscovery .
 type ZooKeeperDiscovery struct {
-	//conn              *zk.Conn
 	instanceID        string
 	pool              *clientpool.ZooKeeperPool
 	outputLogCallback OutputLogCallback

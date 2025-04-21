@@ -25,7 +25,6 @@ import (
 
 // NacosDiscovery .
 type NacosDiscovery struct {
-	//client            naming_client.INamingClient
 	outputLogCallback OutputLogCallback
 	pool              *clientpool.NacosNamingPool
 	clientConfig      NacosDiscoveryConfig
