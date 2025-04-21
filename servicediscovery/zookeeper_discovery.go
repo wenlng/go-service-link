@@ -130,7 +130,7 @@ func (d *ZooKeeperDiscovery) checkAndReRegisterServices(ctx context.Context) err
 		}
 
 		if err := helper.WithRetry(ctx, operation); err != nil {
-			d.outLog(OutputLogTypeWarn, fmt.Sprintf("[ZooKeeperDiscovery] The re-registration service failed: %v", err))
+			d.outLog(OutputLogTypeWarn, fmt.Sprintf("[ZooKeeperDiscovery] Failed to the re-registration service: %v", err))
 			return err
 		}
 	}
@@ -270,7 +270,7 @@ func (d *ZooKeeperDiscovery) keepAliveLoop(ctx context.Context, path string, dat
 			if err := helper.WithRetry(context.Background(), operation); err != nil {
 				d.outLog(OutputLogTypeWarn, fmt.Sprintf("[ZooKeeperDiscovery] Failed to check instance: %v", err))
 				if err := d.checkAndReRegisterServices(ctx); err != nil {
-					d.outLog(OutputLogTypeWarn, fmt.Sprintf("[ZooKeeperDiscovery] The re-registration service failed: %v", err))
+					d.outLog(OutputLogTypeWarn, fmt.Sprintf("[ZooKeeperDiscovery] Failed to the re-registration service: %v", err))
 				}
 				d.pool.Put(cli)
 				continue
@@ -382,7 +382,7 @@ func (d *ZooKeeperDiscovery) GetInstances(serviceName string) ([]instance.Servic
 		data, _, err := cli.Get(path.Join(prefix, child))
 		if err != nil {
 			if err = d.checkAndReRegisterServices(context.Background()); err != nil {
-				d.outLog(OutputLogTypeWarn, fmt.Sprintf("The re-registration service failed: %v", err))
+				d.outLog(OutputLogTypeWarn, fmt.Sprintf("[ZooKeeperDiscovery]  Failed to the re-registration service: %v", err))
 			}
 
 			d.outLog(OutputLogTypeWarn, fmt.Sprintf("[ZooKeeperDiscovery] Failed to get instance data: %v", err))
