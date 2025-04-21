@@ -12,6 +12,7 @@ import (
 
 	"github.com/wenlng/go-service-link/dynaconfig"
 	"github.com/wenlng/go-service-link/dynaconfig/provider"
+	"github.com/wenlng/go-service-link/foundation/helper"
 )
 
 func main() {
@@ -42,11 +43,6 @@ func main() {
 		},
 	}
 
-	keys := make([]string, 0)
-	for key, _ := range configs {
-		keys = append(keys, key)
-	}
-
 	providerCfg := provider.ProviderConfig{
 		//Type:      provider.ProviderTypeEtcd,
 		//Endpoints: []string{"localhost:2379"},
@@ -68,25 +64,13 @@ func main() {
 		//},
 	}
 
-	p, err := provider.NewProvider(providerCfg)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create provider: %v \n", err)
-		return
-	}
-
-	p.SetOutputLogCallback(func(logType dynaconfig.OutputLogType, message string) {
-		if logType == dynaconfig.OutputLogTypeError {
-			fmt.Fprintf(os.Stderr, "ERROR - "+message+"\n")
-		} else if logType == dynaconfig.OutputLogTypeWarn {
-			fmt.Fprintf(os.Stdout, "WARN - "+message+"\n")
-		} else if logType == dynaconfig.OutputLogTypeDebug {
-			fmt.Fprintf(os.Stdout, "DEBUG - "+message+"\n")
-		} else {
-			fmt.Fprintf(os.Stdout, "INFO -"+message+"\n")
-		}
+	manager, err := dynaconfig.NewConfigManager(dynaconfig.ConfigManagerParams{
+		ProviderConfig: providerCfg,
+		Configs:        configs,
 	})
-
-	manager := dynaconfig.NewConfigManager(p, configs, keys)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create config mananger, err: %v \n", err)
+	}
 	manager.SetOutputLogCallback(func(logType dynaconfig.OutputLogType, message string) {
 		if logType == dynaconfig.OutputLogTypeError {
 			fmt.Fprintf(os.Stderr, "ERROR - "+message+"\n")
@@ -102,7 +86,7 @@ func main() {
 	manager.Subscribe(func(key string, config *provider.Config) error {
 		log.Println(">>>>>>>>>>>> Hot reload triggered", "key", key, "content", config.Content)
 		if key == "/config/my-app/db" {
-			if len(config.Content) <= 0 {
+			if helper.IsOnlyEmpty(config.Content) {
 				return errors.New("invalid port number")
 			}
 			fmt.Fprintf(os.Stderr, ">>>>>>>>>>>>>>> Reinitializing database connection, content: %v \n", config.Content)
@@ -142,7 +126,7 @@ func main() {
 	go func() {
 		for {
 			time.Sleep(3 * time.Second)
-			for _, key := range keys {
+			for _, key := range []string{"/config/my-app/main", "/config/my-app/db"} {
 				config := manager.GetLocalConfig(key)
 				fmt.Printf("+++++++ >>> Current config for %s: %+v\n", key, config)
 			}

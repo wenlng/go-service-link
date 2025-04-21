@@ -29,7 +29,7 @@ const (
 type Config struct {
 	Name             string                                      `json:"name"`
 	Version          int64                                       `json:"version"`
-	Content          string                                      `json:"content"`
+	Content          interface{}                                 `json:"content"`
 	ValidateCallback func(config *Config) (skip bool, err error) `json:"-"`
 }
 
@@ -39,7 +39,7 @@ func (c *Config) CallValidate() (skip bool, err error) {
 		return c.ValidateCallback(c)
 	}
 
-	if c.Content == "" {
+	if helper.IsOnlyEmpty(c.Content) {
 		return false, fmt.Errorf("content cannot be empty")
 	}
 	return false, nil
@@ -68,7 +68,7 @@ type ProviderConfig struct {
 	Username  string
 	Password  string
 	PoolSize  int
-	tlsConfig *common.TLSConfig
+	TlsConfig *common.TLSConfig
 
 	EtcdProviderConfig
 	NacosProviderConfig
@@ -83,7 +83,7 @@ func NewProvider(cfg ProviderConfig) (ConfigProvider, error) {
 		config := cfg.EtcdProviderConfig
 
 		config.address = cfg.Endpoints
-		config.tlsConfig = cfg.tlsConfig
+		config.tlsConfig = cfg.TlsConfig
 		config.username = cfg.Username
 		config.password = cfg.Password
 		config.poolSize = cfg.PoolSize
@@ -92,7 +92,7 @@ func NewProvider(cfg ProviderConfig) (ConfigProvider, error) {
 		config := cfg.ConsulProviderConfig
 
 		config.address = cfg.Endpoints
-		config.tlsConfig = cfg.tlsConfig
+		config.tlsConfig = cfg.TlsConfig
 		config.username = cfg.Username
 		config.password = cfg.Password
 		config.poolSize = cfg.PoolSize
@@ -102,7 +102,7 @@ func NewProvider(cfg ProviderConfig) (ConfigProvider, error) {
 		config := cfg.ZooKeeperProviderConfig
 
 		config.address = cfg.Endpoints
-		config.tlsConfig = cfg.tlsConfig
+		config.tlsConfig = cfg.TlsConfig
 		config.username = cfg.Username
 		config.password = cfg.Password
 		config.poolSize = cfg.PoolSize
@@ -112,7 +112,7 @@ func NewProvider(cfg ProviderConfig) (ConfigProvider, error) {
 		config := cfg.NacosProviderConfig
 
 		config.address = cfg.Endpoints
-		config.tlsConfig = cfg.tlsConfig
+		config.tlsConfig = cfg.TlsConfig
 		config.username = cfg.Username
 		config.password = cfg.Password
 		config.poolSize = cfg.PoolSize

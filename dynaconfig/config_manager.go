@@ -49,24 +49,41 @@ type ConfigManager struct {
 	outputLogCallback OutputLogCallback
 }
 
+type ConfigManagerParams struct {
+	ProviderConfig provider.ProviderConfig
+	Configs        map[string]*provider.Config
+}
+
 // NewConfigManager ..
-func NewConfigManager(provider provider.ConfigProvider, configs map[string]*provider.Config, keys []string) *ConfigManager {
+func NewConfigManager(cmp ConfigManagerParams) (*ConfigManager, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
+	p, err := provider.NewProvider(cmp.ProviderConfig)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to create provider, err: %v", err)
+	}
+
+	keys := make([]string, 0)
+	for key, _ := range cmp.Configs {
+		keys = append(keys, key)
+	}
+
 	m := &ConfigManager{
-		provider:   provider,
-		configs:    configs,
+		provider:   p,
+		configs:    cmp.Configs,
 		keys:       keys,
 		ctx:        ctx,
 		cancel:     cancel,
 		healthFreq: 10 * time.Second,
 	}
 	m.startHealthCheck()
-	return m
+	return m, nil
 }
 
 // SetOutputLogCallback Set the log out hook function
 func (m *ConfigManager) SetOutputLogCallback(outputLogCallback OutputLogCallback) {
+	m.provider.SetOutputLogCallback(outputLogCallback)
 	m.outputLogCallback = outputLogCallback
 }
 
@@ -120,7 +137,8 @@ func (m *ConfigManager) SyncConfig(ctx context.Context) error {
 			}
 
 			if localConfig.Version <= 0 {
-				localConfig.Version = time.Now().UnixNano()
+				//localConfig.Version = time.Now().UnixNano()
+				localConfig.Version = 1
 			}
 
 			if err = m.provider.PutConfig(ctx, key, localConfig); err != nil {
@@ -155,6 +173,19 @@ func (m *ConfigManager) SyncConfig(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// RefreshConfig sync refresh configuration
+func (m *ConfigManager) RefreshConfig(ctx context.Context, key string, p *provider.Config) {
+	if _, ok := m.configs["key"]; !ok {
+		return
+	}
+
+	m.mu.Lock()
+	m.configs[key] = p
+	m.mu.Unlock()
+
+	m.ASyncConfig(ctx)
 }
 
 // Watch for configuration changes
@@ -275,14 +306,14 @@ func (m *ConfigManager) startHealthCheck() {
 				m.setCachedHealthStatus(status)
 
 				if status.Err != nil {
-					m.outLog(helper.OutputLogTypeError, fmt.Sprintf("[ConfigManager] Health check failed, mertice: %v, err: %v", status.Metrics, status.Err))
+					m.outLog(helper.OutputLogTypeWarn, fmt.Sprintf("[ConfigManager] Health check failed, mertice: %v, err: %v", status.Metrics, status.Err))
 					m.healthFreq = 2 * time.Second // Increase the frequency when failure occurs
 					if err := m.SyncConfig(m.ctx); err != nil {
 						m.outLog(helper.OutputLogTypeError, fmt.Sprintf("[ConfigManager] Resync failed after reconnect, err: %v", err))
 					}
 				} else {
 					m.healthFreq = 10 * time.Second // Return to the normal frequency when successful
-					m.outLog(helper.OutputLogTypeDebug, fmt.Sprintf("[ConfigManager] Health check passed, metrics: %v", status.Metrics))
+					m.outLog(helper.OutputLogTypeInfo, fmt.Sprintf("[ConfigManager] Health check passed, metrics: %v", status.Metrics))
 				}
 				ticker.Reset(m.healthFreq)
 			}
@@ -306,6 +337,7 @@ func (m *ConfigManager) Close() error {
 		m.outLog(helper.OutputLogTypeError, fmt.Sprintf("[ConfigManager] Failed to close provider, err: %v", err))
 		return err
 	}
+
 	m.outLog(helper.OutputLogTypeInfo, fmt.Sprintf("[ConfigManager] Config manager closed"))
 
 	return nil

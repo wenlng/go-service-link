@@ -176,6 +176,13 @@ func (p *EtcdProvider) HealthCheck(ctx context.Context) HealthStatus {
 	metrics := make(map[string]interface{})
 	start := time.Now()
 
+	// Check the writing capability
+	testKey := "/health/test"
+	_, err := cli.Put(ctx, testKey, "test")
+	if err != nil {
+		return HealthStatus{Metrics: metrics, Err: fmt.Errorf("etcd write check failed: %v", err)}
+	}
+
 	// Check the connection status
 	resp, err := cli.Get(ctx, "/health", clientv3.WithLimit(1))
 	if err != nil {
@@ -184,12 +191,6 @@ func (p *EtcdProvider) HealthCheck(ctx context.Context) HealthStatus {
 	metrics["latency_ms"] = time.Since(start).Milliseconds()
 	metrics["node_count"] = len(resp.Kvs)
 
-	// Check the writing capability
-	testKey := "/health/test"
-	_, err = cli.Put(ctx, testKey, "test")
-	if err != nil {
-		return HealthStatus{Metrics: metrics, Err: fmt.Errorf("etcd write check failed: %v", err)}
-	}
 	_, err = cli.Delete(ctx, testKey)
 	if err != nil {
 		return HealthStatus{Metrics: metrics, Err: fmt.Errorf("etcd delete check failed: %v", err)}

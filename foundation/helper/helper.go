@@ -115,3 +115,25 @@ func EnsureHTTP(url string) string {
 	}
 	return url
 }
+
+// IsOnlyEmpty ..
+func IsOnlyEmpty(v interface{}) bool {
+	if v == nil {
+		return true
+	}
+
+	switch v := v.(type) {
+	case string:
+		return v == ""
+	case int:
+		return v == 0
+	case bool:
+		return !v
+	case []interface{}:
+		return len(v) == 0
+	case map[interface{}]interface{}:
+		return len(v) == 0
+	default:
+		return false
+	}
+}

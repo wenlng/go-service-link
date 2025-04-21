@@ -46,7 +46,7 @@ type NacosProviderConfig struct {
 // NewNacosProvider ..
 func NewNacosProvider(conf NacosProviderConfig) (ConfigProvider, error) {
 	if conf.NacosExtraConfig.NamespaceId == "" {
-		conf.NacosExtraConfig.NamespaceId = "public"
+		conf.NacosExtraConfig.NamespaceId = ""
 	}
 	if conf.poolSize <= 0 {
 		conf.poolSize = 5
@@ -169,18 +169,20 @@ func (p *NacosProvider) HealthCheck(ctx context.Context) HealthStatus {
 	metrics := make(map[string]interface{})
 	start := time.Now()
 
+	// Check the writing capability
+	_, err := client.PublishConfig(vo.ConfigParam{DataId: "health.test", Group: "DEFAULT_GROUP", Content: "test"})
+	if err != nil {
+		return HealthStatus{Metrics: metrics, Err: fmt.Errorf("nacos write check failed: %v", err)}
+	}
+
 	// Check the reading capability
-	_, err := client.GetConfig(vo.ConfigParam{DataId: "health", Group: "DEFAULT_GROUP"})
+	_, err = client.GetConfig(vo.ConfigParam{DataId: "health.test", Group: "DEFAULT_GROUP"})
 	if err != nil {
 		return HealthStatus{Metrics: metrics, Err: fmt.Errorf("nacos health check failed: %v", err)}
 	}
 	metrics["latency_ms"] = time.Since(start).Milliseconds()
 
-	// Check the writing capability
-	_, err = client.PublishConfig(vo.ConfigParam{DataId: "health.test", Group: "DEFAULT_GROUP", Content: "test"})
-	if err != nil {
-		return HealthStatus{Metrics: metrics, Err: fmt.Errorf("nacos write check failed: %v", err)}
-	}
+	// Check the deleting capability
 	_, err = client.DeleteConfig(vo.ConfigParam{DataId: "health.test", Group: "DEFAULT_GROUP"})
 	if err != nil {
 		return HealthStatus{Metrics: metrics, Err: fmt.Errorf("nacos delete check failed: %v", err)}
